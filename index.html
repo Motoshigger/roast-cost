@@ -175,14 +175,25 @@
     display: flex;
     align-items: center;
     font-size: 10.5px;
-    font-weight: 600;
-    color: var(--ink-faint);
+    font-weight: 700;
+    color: var(--accent-ink);
     letter-spacing: 0.04em;
-    padding: 0 8px 0 14px;
+    padding: 3px 10px;
+    margin: 7px 6px 7px 16px;
     white-space: nowrap;
+    background: var(--accent-soft);
+    border-radius: 999px;
+    border-left: 1px solid var(--line);
   }
-  .tab-group-label:first-child { padding-left: 4px; }
-  .tab-group-label.muted { opacity: 0.7; }
+  .tab-group-label:first-child {
+    margin-left: 4px;
+    border-left: none;
+  }
+  .tab-group-label.muted {
+    background: transparent;
+    color: var(--ink-faint);
+    border-left: 1px solid var(--line);
+  }
 
   .tab-btn-muted {
     color: var(--ink-faint);
