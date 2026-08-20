@@ -437,6 +437,11 @@
     box-shadow: 1px 0 0 var(--line-soft);
   }
 
+  .matrix td.cell.historical {
+    color: var(--ink-soft);
+    font-style: italic;
+  }
+
   .matrix td.cell {
     text-align: right;
     font-variant-numeric: tabular-nums;
@@ -873,7 +878,7 @@
 
     <div class="tab-panel" data-tab-panel="usage-history" hidden>
       <div style="padding:18px 22px 4px;"><h2>各月 使用用途別 生豆使用量 (kg・麻袋換算)</h2></div>
-      <p class="hint" style="padding:0 22px 10px;">使用用途ごとに、「入荷処理」タブで記録した実績(入荷済みの分)だけを月別に集計して表示します。契約の理論上の残数配分は含みません。kg数の下には、生産国ごとの麻袋換算数量も表示します。セルにマウスを乗せると、生産国ごとの内訳を確認できます。</p>
+      <p class="hint" style="padding:0 22px 10px;">使用用途ごとに、「入荷処理」タブで記録した実績を月別に集計して表示します(契約の理論上の残数配分は含みません)。「入荷処理」に未登録の月は、仕入システムからの実績集計値を斜体で参考表示します(セルにマウスを乗せるとどちらのデータか分かります)。kg数の下には生産国ごとの麻袋換算数量も表示します。</p>
       <div class="table-wrap">
         <table class="matrix" id="usage-matrix"></table>
         <div class="empty" id="usage-matrix-empty" style="display:none;">「入荷処理」タブで入荷を記録すると、ここに月次の実績が表示されます。</div>
@@ -946,6 +951,7 @@
   let editingRoastId = null;
   let editingContractId = null;
   let changeLog = [];
+  let historicalUsageKg = {}; // SMILE V2等からの過去実績集計値: { 使用用途: { 月: kg } }。実際の入荷処理が記録された月はそちらを優先表示する。
 
   function fmt(n) {
     if (!isFinite(n)) return "—";
@@ -1123,8 +1129,15 @@
   // 生産国ごとの麻袋換算用の標準重量(kg/袋)
   const BAG_WEIGHT_BY_COUNTRY = {
     "ブラジル": 60, "コロンビア": 70, "グアテマラ": 69, "エチオピア": 60,
-    "ホンジュラス": 69, "ベトナム": 60, "インドネシア": 60, "タンザニア": 60
+    "ホンジュラス": 69, "ベトナム": 60, "インドネシア": 60, "タンザニア": 60,
+    "ジャマイカ": 60
   };
+
+  // 使用用途から対応する生産国を推測する(麻袋換算用)。契約/当月買いに登録済みのものから探し、無ければ使用用途名をそのまま国名とみなす。
+  function usageToCountry(usage) {
+    const found = entries.find(e => e.usage === usage);
+    return found ? found.country : usage;
+  }
 
   // 使用用途ごとに、月別で実際に入荷処理された数量の内訳を返す({使用用途: {月: {totalKg, byCountry: {国: kg}}}})
   // 契約残数(理論上の月割り)は含めず、入荷処理タブで記録した実績のみを集計する。
@@ -1152,13 +1165,17 @@
     if (!table) return;
     table.innerHTML = "";
 
-    const detail = getUsageArrivalDetail(); // { 使用用途: { 月: { totalKg, byCountry: {国: kg} } } }
-    const usages = uniqueUsages();
+    const detail = getUsageArrivalDetail(); // { 使用用途: { 月: { totalKg, byCountry: {国: kg} } } } (入荷処理の実績)
+    const usages = new Set(uniqueUsages());
+    Object.keys(historicalUsageKg).forEach(u => usages.add(u));
+    const usageList = [...usages].sort((a, b) => a.localeCompare(b, "ja"));
+
     const monthSet = new Set();
     Object.values(detail).forEach(byMonth => Object.keys(byMonth).forEach(m => monthSet.add(m)));
+    Object.values(historicalUsageKg).forEach(byMonth => Object.keys(byMonth).forEach(m => monthSet.add(m)));
     const months = orderMonthsCurrentFirst([...monthSet]);
 
-    if (usages.length === 0 || months.length === 0) {
+    if (usageList.length === 0 || months.length === 0) {
       emptyEl.style.display = "block";
       return;
     }
@@ -1176,11 +1193,12 @@
     table.appendChild(thead);
 
     const tbody = document.createElement("tbody");
-    usages.forEach(usage => {
+    usageList.forEach(usage => {
       const tr = document.createElement("tr");
       let cells = `<td class="usage-first-col">${usage}</td>`;
       months.forEach(m => {
         const cellData = detail[usage] && detail[usage][m];
+        const histKg = historicalUsageKg[usage] && historicalUsageKg[usage][m];
         const curCls = m === currentMonth ? " current-month" : "";
         if (cellData) {
           const totalKg = cellData.totalKg;
@@ -1191,7 +1209,12 @@
           const breakdown = Object.keys(cellData.byCountry)
             .sort((a, b) => cellData.byCountry[b] - cellData.byCountry[a])
             .map(country => `${country}: ${fmt(cellData.byCountry[country])}kg`).join(" / ");
-          cells += `<td class="cell${curCls}" title="${breakdown}">${fmt(totalKg)}<span class="unit">kg</span><span class="sub">${fmt1(totalBags)}麻袋</span></td>`;
+          cells += `<td class="cell${curCls}" title="${breakdown}(入荷処理実績)">${fmt(totalKg)}<span class="unit">kg</span><span class="sub">${fmt1(totalBags)}麻袋</span></td>`;
+        } else if (histKg != null) {
+          const country = usageToCountry(usage);
+          const bagWeight = BAG_WEIGHT_BY_COUNTRY[country] || 60;
+          const bags = histKg / bagWeight;
+          cells += `<td class="cell historical${curCls}" title="仕入実績の集計値(入荷処理タブへの個別登録はまだありません)">${fmt(histKg)}<span class="unit">kg</span><span class="sub">${fmt1(bags)}麻袋</span></td>`;
         } else {
           cells += `<td class="cell empty-cell${curCls}">―</td>`;
         }
@@ -2080,7 +2103,7 @@
 
   function saveStateLocal() {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({ entries, arrivals, nextId, nextArrivalId, roastedProducts, nextRoastId, changeLog }));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ entries, arrivals, nextId, nextArrivalId, roastedProducts, nextRoastId, changeLog, historicalUsageKg }));
     } catch (e) { /* storage unavailable, ignore */ }
   }
 
@@ -2105,6 +2128,7 @@
     roastedProducts = data.roastedProducts || [];
     nextRoastId = data.nextRoastId || (Math.max(0, ...roastedProducts.map(p => p.id)) + 1);
     changeLog = data.changeLog || [];
+    historicalUsageKg = data.historicalUsageKg || {};
   }
 
   // 変更履歴に1件追記する(最新300件のみ保持)
@@ -2154,7 +2178,7 @@
   }
 
   function saveToFirestore() {
-    const state = { entries, arrivals, nextId, nextArrivalId, roastedProducts, nextRoastId, changeLog };
+    const state = { entries, arrivals, nextId, nextArrivalId, roastedProducts, nextRoastId, changeLog, historicalUsageKg };
     ledgerDocRef.set(state).then(() => {
       setSyncStatus("");
     }).catch(err => {
