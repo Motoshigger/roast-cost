@@ -1012,7 +1012,7 @@
 
     <div class="tab-panel" data-tab-panel="forecast" hidden>
       <div style="padding:18px 22px 4px;"><h2>在庫切れ予測</h2></div>
-      <p class="hint" style="padding:0 22px 10px;">使用用途ごとの現在の契約残数(まだ使い切っていない契約の合計)を、直近1年間の平均使用量で割って、あと何ヶ月・何年何月頃に在庫が無くなりそうかを予測します。あわせて、直近4四半期(3ヶ月ごと)の使用量と月平均を新しい順に表示するので、次回契約の数量を決める目安にしてください。実績データが無い、または残数が無い使用用途は表示されません。在庫が無くなる予測が早い順に並び、残り2ヶ月以内は赤字、2〜3ヶ月は緑字で強調表示されます。</p>
+      <p class="hint" style="padding:0 22px 10px;">使用用途ごとの現在の契約残数(まだ使い切っていない契約の合計)を、直近1年間の平均使用量で割って、あと何ヶ月・何年何月頃に在庫が無くなりそうかを予測します。あわせて、4-6月・7-9月・10-12月・1-3月の固定四半期ごとの使用量(袋数)と月平均を新しい順に表示するので、次回契約の数量を決める目安にしてください。実績データが無い、または残数が無い使用用途は表示されません。在庫が無くなる予測が早い順に並び、残り2ヶ月以内は赤字、2〜3ヶ月は緑字で強調表示されます。</p>
       <div class="table-wrap">
         <table class="entries-table" id="forecast-table">
           <thead>
@@ -1440,22 +1440,30 @@
     return combined;
   }
 
-  // anchorMonthで終わる3ヶ月ずつの四半期をquarterCount個分(新しい順)集計する({月:kg}のmonthKgから)
+  // 固定四半期(1-3月/4-6月/7-9月/10-12月)の年・四半期番号(0-3)を返す
+  function fixedQuarterOf(ym) {
+    const [y, m] = ym.split("-").map(Number);
+    return { year: y, q: Math.floor((m - 1) / 3) };
+  }
+  function fixedQuarterMonths(year, q) {
+    const startMonth = q * 3 + 1;
+    return [0, 1, 2].map(i => `${year}-${String(startMonth + i).padStart(2, "0")}`);
+  }
+  function fixedQuarterLabel(year, q) {
+    const startMonth = q * 3 + 1, endMonth = q * 3 + 3;
+    return `${year}年${startMonth}-${endMonth}月`;
+  }
+
+  // anchorMonthを含む固定四半期(1-3/4-6/7-9/10-12月)からquarterCount個分(新しい順)集計する({月:kg}のmonthKgから)
   function getQuarterlyStats(monthKg, quarterCount, anchorMonth) {
+    let { year, q } = fixedQuarterOf(anchorMonth);
     const quarters = [];
-    let cursor = anchorMonth;
-    for (let q = 0; q < quarterCount; q++) {
-      const monthsInQuarter = [];
-      for (let i = 0; i < 3; i++) {
-        monthsInQuarter.unshift(cursor);
-        cursor = prevMonth(cursor);
-      }
-      const total = monthsInQuarter.reduce((s, m) => s + (monthKg[m] || 0), 0);
-      quarters.push({
-        label: `${monthLabel(monthsInQuarter[0])}〜${monthLabel(monthsInQuarter[2])}`,
-        total,
-        avg: total / 3
-      });
+    for (let i = 0; i < quarterCount; i++) {
+      const months = fixedQuarterMonths(year, q);
+      const total = months.reduce((s, m) => s + (monthKg[m] || 0), 0);
+      quarters.push({ label: fixedQuarterLabel(year, q), total, avg: total / 3 });
+      q--;
+      if (q < 0) { q = 3; year--; }
     }
     return quarters;
   }
@@ -1518,7 +1526,7 @@
       const quarterHtml = r.quarters.map(q => `
         <div class="forecast-quarter">
           <span class="forecast-quarter-label">${q.label}</span>
-          <span class="forecast-quarter-value">${fmt1(q.total / r.bagWeight)}袋<span class="sub">(${fmt(q.total)}kg・月平均${fmt1(q.avg / r.bagWeight)}袋/${fmt1(q.avg)}kg)</span></span>
+          <span class="forecast-quarter-value">${fmt1(q.total / r.bagWeight)}袋<span class="sub">月平均${fmt1(q.avg / r.bagWeight)}袋</span></span>
         </div>
       `).join("");
       return `
