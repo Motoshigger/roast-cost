@@ -872,11 +872,11 @@
     </div>
 
     <div class="tab-panel" data-tab-panel="usage-history" hidden>
-      <div style="padding:18px 22px 4px;"><h2>各月 使用用途別 生豆使用量 (kg)</h2></div>
-      <p class="hint" style="padding:0 22px 10px;">使用用途ごとに、各月どれだけの生豆(kg)を使ったかを一覧表示します。セルにマウスを乗せると、その内訳(銘柄ごとの数量)を確認できます。「昨年の同じ月は何をどれだけ使っていたか」の確認に使えます。</p>
+      <div style="padding:18px 22px 4px;"><h2>各月 使用用途別 生豆使用量 (kg・麻袋換算)</h2></div>
+      <p class="hint" style="padding:0 22px 10px;">使用用途ごとに、「入荷処理」タブで記録した実績(入荷済みの分)だけを月別に集計して表示します。契約の理論上の残数配分は含みません。kg数の下には、生産国ごとの麻袋換算数量も表示します。セルにマウスを乗せると、生産国ごとの内訳を確認できます。</p>
       <div class="table-wrap">
         <table class="matrix" id="usage-matrix"></table>
-        <div class="empty" id="usage-matrix-empty" style="display:none;">契約生豆・当月買いに使用用途を登録すると、ここに月次使用量が表示されます。</div>
+        <div class="empty" id="usage-matrix-empty" style="display:none;">「入荷処理」タブで入荷を記録すると、ここに月次の実績が表示されます。</div>
       </div>
     </div>
 
@@ -1120,24 +1120,28 @@
     return { costMap, usageCostMap, months: [...monthSet].sort() };
   }
 
-  // 使用用途ごとに、月別でどの銘柄をどれだけ使ったかの内訳を返す({使用用途: {月: {銘柄: {kg, cost}}}})
-  function getUsageHistoryDetail() {
-    const baseContribs = entries.flatMap(baseContribsForEntry);
-    const baseMonths = [...new Set(baseContribs.map(c => c.month))].sort();
-    const tableHorizon = baseMonths.length ? baseMonths[baseMonths.length - 1] : null;
-    const extContribs = entries.flatMap(e => extensionContribsForEntry(e, tableHorizon));
-    const backfillContribs = computeBackfillContribs(baseContribs);
-    const allContribs = baseContribs.concat(extContribs).concat(backfillContribs);
+  // 生産国ごとの麻袋換算用の標準重量(kg/袋)
+  const BAG_WEIGHT_BY_COUNTRY = {
+    "ブラジル": 60, "コロンビア": 70, "グアテマラ": 69, "エチオピア": 60,
+    "ホンジュラス": 69, "ベトナム": 60, "インドネシア": 60, "タンザニア": 60
+  };
 
+  // 使用用途ごとに、月別で実際に入荷処理された数量の内訳を返す({使用用途: {月: {totalKg, byCountry: {国: kg}}}})
+  // 契約残数(理論上の月割り)は含めず、入荷処理タブで記録した実績のみを集計する。
+  function getUsageArrivalDetail() {
     const detail = {};
-    allContribs.forEach(c => {
-      if (!c.usage) return;
-      if (!detail[c.usage]) detail[c.usage] = {};
-      if (!detail[c.usage][c.month]) detail[c.usage][c.month] = {};
-      const byBrand = detail[c.usage][c.month];
-      if (!byBrand[c.brand]) byBrand[c.brand] = { kg: 0, cost: 0 };
-      byBrand[c.brand].kg += c.kg;
-      byBrand[c.brand].cost += c.cost;
+    arrivals.forEach(a => {
+      const contract = entries.find(e => e.id === a.contractId && e.kind === "contract");
+      if (!contract || !contract.usage) return;
+      const month = (a.date || "").slice(0, 7);
+      if (!/^\d{4}-\d{2}$/.test(month)) return;
+      const kg = a.bags * contract.weight;
+      const usage = contract.usage;
+      if (!detail[usage]) detail[usage] = {};
+      if (!detail[usage][month]) detail[usage][month] = { totalKg: 0, byCountry: {} };
+      detail[usage][month].totalKg += kg;
+      if (!detail[usage][month].byCountry[contract.country]) detail[usage][month].byCountry[contract.country] = 0;
+      detail[usage][month].byCountry[contract.country] += kg;
     });
     return detail;
   }
@@ -1148,7 +1152,7 @@
     if (!table) return;
     table.innerHTML = "";
 
-    const detail = getUsageHistoryDetail(); // { 使用用途: { 月: { 銘柄: {kg, cost} } } }
+    const detail = getUsageArrivalDetail(); // { 使用用途: { 月: { totalKg, byCountry: {国: kg} } } }
     const usages = uniqueUsages();
     const monthSet = new Set();
     Object.values(detail).forEach(byMonth => Object.keys(byMonth).forEach(m => monthSet.add(m)));
@@ -1176,14 +1180,18 @@
       const tr = document.createElement("tr");
       let cells = `<td class="usage-first-col">${usage}</td>`;
       months.forEach(m => {
-        const byBrand = detail[usage] && detail[usage][m];
+        const cellData = detail[usage] && detail[usage][m];
         const curCls = m === currentMonth ? " current-month" : "";
-        if (byBrand) {
-          const totalKg = Object.values(byBrand).reduce((s, b) => s + b.kg, 0);
-          const breakdown = Object.keys(byBrand)
-            .sort((a, b) => byBrand[b].kg - byBrand[a].kg)
-            .map(brand => `${brand}: ${fmt(byBrand[brand].kg)}kg`).join(" / ");
-          cells += `<td class="cell${curCls}" title="${breakdown}">${fmt(totalKg)}<span class="unit">kg</span></td>`;
+        if (cellData) {
+          const totalKg = cellData.totalKg;
+          const totalBags = Object.keys(cellData.byCountry).reduce((sum, country) => {
+            const bagWeight = BAG_WEIGHT_BY_COUNTRY[country] || 60;
+            return sum + (cellData.byCountry[country] / bagWeight);
+          }, 0);
+          const breakdown = Object.keys(cellData.byCountry)
+            .sort((a, b) => cellData.byCountry[b] - cellData.byCountry[a])
+            .map(country => `${country}: ${fmt(cellData.byCountry[country])}kg`).join(" / ");
+          cells += `<td class="cell${curCls}" title="${breakdown}">${fmt(totalKg)}<span class="unit">kg</span><span class="sub">${fmt1(totalBags)}麻袋</span></td>`;
         } else {
           cells += `<td class="cell empty-cell${curCls}">―</td>`;
         }
