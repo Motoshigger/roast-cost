@@ -442,6 +442,52 @@
     font-style: italic;
   }
 
+  .matrix td.usage-first-col {
+    cursor: pointer;
+  }
+  .matrix td.usage-first-col:hover {
+    text-decoration: underline;
+  }
+  .matrix tr.usage-row-selected td.usage-first-col {
+    background: var(--accent-soft);
+    color: var(--accent-ink);
+  }
+
+  .uh-stats {
+    margin: 0 22px 14px;
+    padding: 14px 16px;
+    border: 1px solid var(--line-soft);
+    border-radius: 8px;
+    background: var(--paper);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 20px;
+  }
+  .uh-stats .uh-stat-title {
+    flex-basis: 100%;
+    font-weight: 600;
+    font-size: 13px;
+    margin-bottom: 2px;
+  }
+  .uh-stats .uh-stat-block {
+    min-width: 150px;
+  }
+  .uh-stats .uh-stat-label {
+    font-size: 10.5px;
+    color: var(--ink-soft);
+    display: block;
+  }
+  .uh-stats .uh-stat-value {
+    font-size: 15px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+  .uh-stats .uh-stat-avg {
+    font-size: 11px;
+    color: var(--ink-soft);
+    font-variant-numeric: tabular-nums;
+  }
+
   .matrix td.cell {
     text-align: right;
     font-variant-numeric: tabular-nums;
@@ -878,7 +924,8 @@
 
     <div class="tab-panel" data-tab-panel="usage-history" hidden>
       <div style="padding:18px 22px 4px;"><h2>各月 使用用途別 生豆使用量 (kg・麻袋換算)</h2></div>
-      <p class="hint" style="padding:0 22px 10px;">使用用途ごとに、「入荷処理」タブで記録した実績を月別に集計して表示します(契約の理論上の残数配分は含みません)。「入荷処理」に未登録の月は、仕入システムからの実績集計値を斜体で参考表示します(セルにマウスを乗せるとどちらのデータか分かります)。kg数の下には生産国ごとの麻袋換算数量も表示します。</p>
+      <p class="hint" style="padding:0 22px 10px;">使用用途ごとに、「入荷処理」タブで記録した実績を月別に集計して表示します(契約の理論上の残数配分は含みません)。「入荷処理」に未登録の月は、仕入システムからの実績集計値を斜体で参考表示します(セルにマウスを乗せるとどちらのデータか分かります)。kg数の下には生産国ごとの麻袋換算数量も表示します。左端の使用用途名をクリックすると、直近1年・半年・3ヶ月の使用量と月平均を表示します。</p>
+      <div id="uh-stats" class="uh-stats" hidden></div>
       <div class="table-wrap">
         <table class="matrix" id="usage-matrix"></table>
         <div class="empty" id="usage-matrix-empty" style="display:none;">「入荷処理」タブで入荷を記録すると、ここに月次の実績が表示されます。</div>
@@ -1192,9 +1239,13 @@
     thead.appendChild(headRow);
     table.appendChild(thead);
 
+    const combinedByUsage = {}; // 実績優先(無ければ仕入集計値)でまとめた { usage: { month: kg } }。期間集計に使う。
+
     const tbody = document.createElement("tbody");
     usageList.forEach(usage => {
+      combinedByUsage[usage] = {};
       const tr = document.createElement("tr");
+      tr.dataset.usage = usage;
       let cells = `<td class="usage-first-col">${usage}</td>`;
       months.forEach(m => {
         const cellData = detail[usage] && detail[usage][m];
@@ -1202,6 +1253,7 @@
         const curCls = m === currentMonth ? " current-month" : "";
         if (cellData) {
           const totalKg = cellData.totalKg;
+          combinedByUsage[usage][m] = totalKg;
           const totalBags = Object.keys(cellData.byCountry).reduce((sum, country) => {
             const bagWeight = BAG_WEIGHT_BY_COUNTRY[country] || 60;
             return sum + (cellData.byCountry[country] / bagWeight);
@@ -1211,6 +1263,7 @@
             .map(country => `${country}: ${fmt(cellData.byCountry[country])}kg`).join(" / ");
           cells += `<td class="cell${curCls}" title="${breakdown}(入荷処理実績)">${fmt(totalKg)}<span class="unit">kg</span><span class="sub">${fmt1(totalBags)}麻袋</span></td>`;
         } else if (histKg != null) {
+          combinedByUsage[usage][m] = histKg;
           const country = usageToCountry(usage);
           const bagWeight = BAG_WEIGHT_BY_COUNTRY[country] || 60;
           const bags = histKg / bagWeight;
@@ -1223,6 +1276,45 @@
       tbody.appendChild(tr);
     });
     table.appendChild(tbody);
+
+    table.querySelectorAll("tr[data-usage] td.usage-first-col").forEach(td => {
+      td.addEventListener("click", () => {
+        const usage = td.parentElement.dataset.usage;
+        table.querySelectorAll("tr.usage-row-selected").forEach(tr => tr.classList.remove("usage-row-selected"));
+        td.parentElement.classList.add("usage-row-selected");
+        showUsageStats(usage, combinedByUsage[usage] || {});
+      });
+    });
+  }
+
+  // 当月を含む直近N ヶ月分の使用量合計・月平均を計算する({monthKg}は { 月: kg })
+  function trailingUsageStat(monthKg, monthCount) {
+    const currentMonth = currentMonthStr();
+    let cursor = currentMonth;
+    let total = 0;
+    for (let i = 0; i < monthCount; i++) {
+      total += monthKg[cursor] || 0;
+      cursor = prevMonth(cursor);
+    }
+    return { total, avg: total / monthCount };
+  }
+
+  function showUsageStats(usage, monthKg) {
+    const panel = document.getElementById("uh-stats");
+    if (!panel) return;
+    const y1 = trailingUsageStat(monthKg, 12);
+    const m6 = trailingUsageStat(monthKg, 6);
+    const m3 = trailingUsageStat(monthKg, 3);
+    const block = (label, stat) => `
+      <div class="uh-stat-block">
+        <span class="uh-stat-label">${label}</span>
+        <span class="uh-stat-value">${fmt(stat.total)} kg</span>
+        <span class="uh-stat-avg">月平均 ${fmt1(stat.avg)} kg/月</span>
+      </div>
+    `;
+    panel.innerHTML = `<span class="uh-stat-title">${usage}(当月を含む直近実績)</span>` +
+      block("直近1年間", y1) + block("直近半年", m6) + block("直近3ヶ月", m3);
+    panel.hidden = false;
   }
 
   function uniqueUsages() {
