@@ -1,0 +1,2099 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>生豆原価 月次台帳</title>
+<style>
+  :root {
+    --paper: #f3f1ec;
+    --surface: #fbfaf7;
+    --surface-raised: #ffffff;
+    --ink: #262019;
+    --ink-soft: #6b6055;
+    --ink-faint: #a49a8c;
+    --line: #ddd6c9;
+    --line-soft: #e9e4d9;
+    --accent: #5b7047;
+    --accent-soft: #e6ebdd;
+    --accent-ink: #3f4f31;
+    --money: #8a5326;
+    --money-soft: #f3e6d8;
+    --danger: #a5433a;
+    --danger-soft: #f5e1de;
+    --shadow: 0 1px 2px rgba(38, 32, 25, 0.06), 0 4px 16px rgba(38, 32, 25, 0.05);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #19160f;
+      --surface: #221d15;
+      --surface-raised: #2a2419;
+      --ink: #ede6d8;
+      --ink-soft: #b3a794;
+      --ink-faint: #7d7361;
+      --line: #3a3325;
+      --line-soft: #2e2919;
+      --accent: #93b374;
+      --accent-soft: #2c3322;
+      --accent-ink: #c3dba9;
+      --money: #d99a5c;
+      --money-soft: #3a2c1a;
+      --danger: #d9877c;
+      --danger-soft: #3f2723;
+      --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 4px 20px rgba(0, 0, 0, 0.25);
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --paper: #19160f;
+    --surface: #221d15;
+    --surface-raised: #2a2419;
+    --ink: #ede6d8;
+    --ink-soft: #b3a794;
+    --ink-faint: #7d7361;
+    --line: #3a3325;
+    --line-soft: #2e2919;
+    --accent: #93b374;
+    --accent-soft: #2c3322;
+    --accent-ink: #c3dba9;
+    --money: #d99a5c;
+    --money-soft: #3a2c1a;
+    --danger: #d9877c;
+    --danger-soft: #3f2723;
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 4px 20px rgba(0, 0, 0, 0.25);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: "Yu Gothic", "Hiragino Sans", "Noto Sans JP", system-ui, sans-serif;
+    line-height: 1.6;
+    margin: 0;
+    padding: 40px 20px 80px;
+    display: flex;
+    justify-content: center;
+  }
+
+  .page {
+    width: 100%;
+    max-width: 1120px;
+    display: flex;
+    flex-direction: column;
+    gap: 28px;
+  }
+
+  header {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding-bottom: 20px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .header-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .eyebrow {
+    font-size: 12px;
+    letter-spacing: 0.14em;
+    color: var(--accent-ink);
+    font-weight: 600;
+  }
+
+  h1 {
+    font-family: "Hiragino Mincho ProN", "Yu Mincho", serif;
+    font-size: clamp(26px, 4vw, 34px);
+    font-weight: 600;
+    margin: 0;
+    text-wrap: balance;
+    letter-spacing: 0.01em;
+  }
+
+  .subtitle {
+    color: var(--ink-soft);
+    font-size: 14px;
+    max-width: 68ch;
+  }
+
+  h2 {
+    font-size: 15px;
+    font-weight: 600;
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .account-box {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 12px;
+    color: var(--ink-soft);
+    white-space: nowrap;
+  }
+  .account-box .email { font-weight: 600; color: var(--ink); }
+
+  .tabs {
+    display: flex;
+    gap: 2px;
+    padding: 0 10px;
+    border-bottom: 1px solid var(--line);
+    overflow-x: auto;
+  }
+
+  .tab-btn {
+    border: none;
+    background: transparent;
+    color: var(--ink-soft);
+    font-size: 13px;
+    font-weight: 500;
+    padding: 14px 14px 12px;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    white-space: nowrap;
+  }
+
+  .tab-btn:hover { color: var(--ink); }
+  .tab-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+  .tab-btn.active {
+    color: var(--ink);
+    font-weight: 600;
+    border-bottom-color: var(--accent);
+  }
+
+  .tab-panel[hidden] { display: none; }
+
+  .panel {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    box-shadow: var(--shadow);
+  }
+
+  .form-panel {
+    padding: 20px 22px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  .badge {
+    font-size: 11px;
+    padding: 3px 9px;
+    border-radius: 999px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+  }
+
+  .badge.contract { background: var(--accent-soft); color: var(--accent-ink); }
+  .badge.spot { background: var(--money-soft); color: var(--money); }
+  .badge.overdue { background: var(--danger-soft); color: var(--danger); }
+  .badge.neutral { background: var(--line-soft); color: var(--ink-soft); }
+
+  tr.overdue-row td { background: var(--danger-soft); }
+
+  .form-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+
+  .form-grid .span2 { grid-column: 1 / -1; }
+
+  .field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .field label {
+    font-size: 12px;
+    color: var(--ink-soft);
+    letter-spacing: 0.03em;
+  }
+
+  .field input,
+  .field select {
+    width: 100%;
+    padding: 8px 10px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--surface-raised);
+    color: var(--ink);
+    font-size: 14px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .field input:focus-visible,
+  .field select:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+  }
+
+  .balance-remaining { color: var(--money); font-weight: 600; }
+  .balance-remaining.negative { color: var(--danger); }
+  .balance-remaining.zero { color: var(--ink-faint); }
+
+  .section-heading {
+    padding: 18px 22px 4px;
+  }
+  .section-heading.tight { padding-top: 6px; }
+  .section-heading h2 { font-size: 13px; color: var(--ink-soft); }
+
+  .hint {
+    font-size: 11px;
+    color: var(--ink-faint);
+  }
+
+  .btn {
+    border: 1px solid var(--line);
+    background: var(--surface-raised);
+    color: var(--ink);
+    padding: 9px 16px;
+    border-radius: 8px;
+    font-size: 13px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+  }
+
+  .btn:hover { border-color: var(--accent); color: var(--accent-ink); }
+  .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+  .btn.primary {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: var(--surface);
+    font-weight: 600;
+  }
+  .btn.primary:hover { filter: brightness(1.06); color: var(--surface); }
+
+  .btn.money { background: var(--money); border-color: var(--money); color: var(--surface); font-weight: 600; }
+  .btn.money:hover { filter: brightness(1.06); color: var(--surface); }
+
+  .error {
+    font-size: 12px;
+    color: var(--danger);
+    min-height: 14px;
+  }
+
+  .table-wrap {
+    overflow-x: auto;
+    border-radius: 14px;
+  }
+
+  table {
+    border-collapse: collapse;
+    width: 100%;
+  }
+
+  thead th {
+    text-align: left;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--ink-soft);
+    letter-spacing: 0.03em;
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--line);
+    background: var(--surface);
+    white-space: nowrap;
+  }
+
+  thead th.num, td.num { text-align: right; }
+  thead th.sortable { cursor: pointer; user-select: none; }
+  thead th.sortable:hover { color: var(--ink); }
+
+  tbody td {
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--line-soft);
+    background: var(--surface);
+    vertical-align: middle;
+    font-size: 13px;
+    white-space: nowrap;
+  }
+
+  tbody tr:last-child td { border-bottom: none; }
+
+  .entries-table td.brand { font-weight: 600; }
+
+  .compact-table thead th { font-size: 10.5px; padding: 8px 9px; }
+  .compact-table tbody td { font-size: 11.5px; padding: 6px 9px; }
+  .compact-table .sub { font-size: 9.5px; }
+  .compact-table td.wrap, .compact-table th.wrap {
+    white-space: normal;
+    word-break: break-word;
+    max-width: 120px;
+  }
+
+  .sub { display: block; font-size: 11px; color: var(--ink-faint); font-weight: 400; }
+
+  td.remove { text-align: center; }
+
+  .icon-btn {
+    border: none;
+    background: transparent;
+    color: var(--ink-faint);
+    cursor: pointer;
+    font-size: 15px;
+    width: 26px;
+    height: 26px;
+    border-radius: 7px;
+  }
+  .icon-btn:hover { background: var(--line-soft); color: var(--danger); }
+  .icon-btn:focus-visible { outline: 2px solid var(--accent); }
+  .icon-btn:disabled { opacity: 0.3; cursor: default; }
+  .icon-btn:disabled:hover { background: transparent; color: var(--ink-faint); }
+  .icon-btn[data-move-up]:hover, .icon-btn[data-move-down]:hover, .icon-btn[data-edit-roast]:hover { color: var(--accent-ink); }
+
+  .empty {
+    padding: 28px;
+    text-align: center;
+    color: var(--ink-faint);
+    font-size: 13px;
+    background: var(--surface);
+  }
+
+  .matrix thead th { font-size: 10.5px; padding: 6px 10px; }
+  .matrix tbody td { font-size: 11px; padding: 4px 10px; }
+  .matrix tbody td .badge { font-size: 9.5px; padding: 2px 7px; }
+
+  .matrix th.brand-col,
+  .matrix td.brand-col {
+    position: sticky;
+    left: 0;
+    z-index: 2;
+    background: var(--surface);
+    width: 150px;
+    min-width: 150px;
+    max-width: 150px;
+    white-space: normal;
+  }
+  .matrix td.brand-col {
+    line-height: 1.3;
+  }
+  .matrix td.brand-col .brand-country,
+  .matrix td.brand-col .brand-product {
+    display: block;
+    white-space: normal;
+    overflow-wrap: break-word;
+    word-break: break-word;
+  }
+  .matrix td.brand-col .brand-country {
+    font-weight: 600;
+  }
+  .matrix td.brand-col .brand-product {
+    font-size: 10px;
+    font-weight: 400;
+    color: var(--ink-soft);
+  }
+  .matrix th.kind-col,
+  .matrix td.kind-col {
+    position: sticky;
+    left: 150px;
+    z-index: 2;
+    background: var(--surface);
+    width: 66px;
+    min-width: 66px;
+    white-space: nowrap;
+  }
+  .matrix td.kind-col .badge { display: block; margin-bottom: 2px; }
+  .matrix td.kind-col .badge:last-child { margin-bottom: 0; }
+
+  .matrix th.usage-col,
+  .matrix td.usage-col {
+    position: sticky;
+    left: 216px;
+    z-index: 2;
+    background: var(--surface);
+    color: var(--ink-soft);
+    font-size: 10.5px;
+    white-space: nowrap;
+    box-shadow: 1px 0 0 var(--line-soft);
+  }
+
+  .matrix td.cell {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+    color: var(--money);
+  }
+  .matrix td.cell.empty-cell { color: var(--ink-faint); font-weight: 400; }
+  .matrix td.cell.empty-cell.fillable {
+    cursor: pointer;
+    color: var(--ink-soft);
+    border: 1px dashed var(--line);
+  }
+  .matrix td.cell.empty-cell.fillable:hover {
+    background: var(--money-soft);
+    color: var(--money);
+    border-color: var(--money);
+  }
+  .matrix td.cell .unit { font-size: 9px; color: var(--ink-faint); font-weight: 400; margin-left: 2px; }
+  .matrix td.cell.extended { color: var(--accent-ink); background: var(--accent-soft); }
+  .matrix td.cell.backfilled { color: var(--accent-ink); font-style: italic; box-shadow: inset 0 0 0 1px var(--accent); }
+
+  .matrix th.current-month,
+  .matrix td.current-month {
+    border-left: 2px solid var(--money);
+    border-right: 2px solid var(--money);
+  }
+  .matrix th.current-month {
+    color: var(--money);
+    font-weight: 700;
+  }
+  .matrix th.current-month .sub {
+    color: var(--money);
+    font-weight: 600;
+  }
+
+  .legend {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 22px 16px;
+    font-size: 12px;
+    color: var(--ink-soft);
+  }
+  .legend .swatch {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    border-radius: 3px;
+    background: var(--accent-soft);
+    border: 1px solid var(--accent);
+  }
+
+  footer {
+    font-size: 12px;
+    color: var(--ink-faint);
+    text-align: center;
+    padding-top: 8px;
+  }
+
+  #gate {
+    max-width: 420px;
+    margin: 120px auto;
+    text-align: center;
+    padding: 40px 30px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    box-shadow: var(--shadow);
+  }
+  #gate h1 {
+    font-size: 22px;
+    margin-bottom: 8px;
+  }
+  #gate p {
+    color: var(--ink-soft);
+    font-size: 13px;
+    margin-bottom: 20px;
+  }
+  #gate .error {
+    margin-top: 16px;
+  }
+</style>
+</head>
+<body>
+
+<div id="gate">
+  <h1>生豆原価 月次台帳</h1>
+  <p>社内メンバーのみアクセスできます。Googleアカウントでサインインしてください。</p>
+  <button class="btn primary" id="signin-btn">Googleでサインイン</button>
+  <p class="error" id="gate-error"></p>
+</div>
+
+<div class="page" id="app" hidden>
+  <header>
+    <div class="header-top">
+      <div>
+        <span class="eyebrow">GREEN BEAN COST LEDGER</span>
+        <h1>生豆原価 月次台帳</h1>
+      </div>
+      <div class="account-box">
+        <span class="email" id="account-email"></span>
+        <button class="btn" id="signout-btn" type="button">サインアウト</button>
+      </div>
+    </div>
+    <p class="subtitle">生豆の仕入れを「契約生豆」と「当月買い(都度購入)」に分けて記録し、銘柄ごと・月ごとの生豆単価(円/kg)を自動集計します。契約生豆は期間内の月に均等に割り振られます。</p>
+    <p id="sync-status" style="font-size:11px; color:var(--money); margin:0; min-height:14px;"></p>
+  </header>
+
+  <div class="panel">
+    <div class="tabs" role="tablist">
+      <button class="tab-btn active" data-tab="contract" role="tab" aria-selected="true">契約生豆を追加</button>
+      <button class="tab-btn" data-tab="spot" role="tab" aria-selected="false">当月買いを追加</button>
+      <button class="tab-btn" data-tab="arrival" role="tab" aria-selected="false">入荷処理</button>
+      <button class="tab-btn" data-tab="balance" role="tab" aria-selected="false">契約残数管理</button>
+      <button class="tab-btn" data-tab="matrix" role="tab" aria-selected="false">各月生豆原価</button>
+      <button class="tab-btn" data-tab="roast" role="tab" aria-selected="false">焙煎豆商品登録</button>
+      <button class="tab-btn" data-tab="roast-matrix" role="tab" aria-selected="false">各月焙煎豆原価</button>
+    </div>
+
+    <div class="tab-panel form-panel" data-tab-panel="contract">
+      <h2><span class="badge contract">契約生豆</span>期間契約の仕入れを追加</h2>
+      <div class="form-grid">
+        <div class="field">
+          <label for="c-country">生産国名</label>
+          <input type="text" id="c-country" placeholder="例: エチオピア">
+        </div>
+        <div class="field">
+          <label for="c-product">商品名</label>
+          <input type="text" id="c-product" placeholder="例: イルガチェフェ">
+        </div>
+        <div class="field">
+          <label for="c-supplier">仕入先</label>
+          <input type="text" id="c-supplier" placeholder="例: 〇〇商事">
+        </div>
+        <div class="field">
+          <label for="c-contract-no">契約番号</label>
+          <input type="text" id="c-contract-no" placeholder="例: 2026-0142">
+        </div>
+        <div class="field span2">
+          <label for="c-usage">使用用途</label>
+          <input type="text" id="c-usage" placeholder="例: シングルオリジン販売用">
+        </div>
+        <div class="field">
+          <label for="c-start">開始月</label>
+          <input type="text" inputmode="numeric" class="month-input" id="c-start" placeholder="202607">
+        </div>
+        <div class="field">
+          <label for="c-end">終了月</label>
+          <input type="text" inputmode="numeric" class="month-input" id="c-end" placeholder="202612">
+        </div>
+        <div class="field">
+          <label for="c-bags">袋数</label>
+          <input type="number" id="c-bags" min="0" step="1" placeholder="10">
+        </div>
+        <div class="field">
+          <label for="c-weight">1袋あたり重量 (kg)</label>
+          <input type="number" id="c-weight" min="0" step="0.1" placeholder="30">
+        </div>
+        <div class="field span2">
+          <label for="c-price">契約単価 (円/kg)</label>
+          <input type="number" id="c-price" min="0" step="1" placeholder="900">
+        </div>
+        <div class="field span2">
+          <label for="c-opening-remaining">現在の契約残数 (袋・任意)</label>
+          <input type="number" id="c-opening-remaining" min="0" step="1" placeholder="空欄なら元本の袋数がそのまま残数になります">
+        </div>
+        <div class="field span2" style="flex-direction:row; align-items:center; gap:8px;">
+          <input type="checkbox" id="c-early-pickup" style="width:auto;">
+          <label for="c-early-pickup" style="margin:0;">前倒し引き取り可(開始月より前でも引き取れる契約)</label>
+        </div>
+      </div>
+      <p class="hint">総量(袋数×重量)と総額を、開始月〜終了月の月数で均等に割り振ります。すでに一部使用済みの契約を登録する場合のみ「現在の契約残数」に今の残り袋数を入力してください(通常は空欄でOKです)。「前倒し引き取り可」にチェックすると、開始月より前で他に原価データが無い月にもこの契約の単価を反映します。追加後も入力内容は残るので、期間だけ変えて連続登録できます。</p>
+      <p class="error" id="c-error"></p>
+      <div style="display:flex; gap:10px;">
+        <button class="btn primary" id="c-add">＋ 契約生豆を追加</button>
+        <button class="btn" id="c-clear" type="button">フォームをクリア</button>
+        <button class="btn" id="c-cancel-edit" type="button" style="display:none;">キャンセル</button>
+      </div>
+    </div>
+
+    <div class="tab-panel form-panel" data-tab-panel="spot" hidden>
+      <h2><span class="badge spot">当月買い</span>都度購入の仕入れを追加</h2>
+      <div class="form-grid">
+        <div class="field">
+          <label for="s-country">生産国名</label>
+          <input type="text" id="s-country" placeholder="例: ブラジル">
+        </div>
+        <div class="field">
+          <label for="s-product">商品名</label>
+          <input type="text" id="s-product" placeholder="例: サントス">
+        </div>
+        <div class="field">
+          <label for="s-month">対象月</label>
+          <input type="text" inputmode="numeric" class="month-input" id="s-month" placeholder="202608">
+        </div>
+        <div class="field">
+          <label for="s-price">仕入れ単価 (円/kg)</label>
+          <input type="number" id="s-price" min="0" step="1" placeholder="1050">
+        </div>
+        <div class="field span2">
+          <label for="s-qty">数量 (kg・任意)</label>
+          <input type="number" id="s-qty" min="0" step="0.1" placeholder="未入力可(平均計算時は等分として扱います)">
+        </div>
+        <div class="field span2">
+          <label for="s-usage">使用用途 (任意)</label>
+          <input type="text" id="s-usage" placeholder="例: シングルオリジン販売用">
+        </div>
+      </div>
+      <p class="hint">その月の価格だけを記録できます。数量を入れると、同月に契約分がある場合の加重平均に反映されます。使用用途を入力すると、各月生豆原価タブと各月焙煎豆原価タブでその用途の原価に反映されます。</p>
+      <p class="error" id="s-error"></p>
+      <button class="btn money" id="s-add">＋ 当月買いを追加</button>
+    </div>
+
+    <div class="tab-panel" data-tab-panel="arrival" hidden>
+      <div class="form-panel" style="padding-bottom:6px;">
+        <div class="form-grid">
+          <div class="field">
+            <label for="a-country-filter">生産国で絞り込み</label>
+            <select id="a-country-filter"></select>
+          </div>
+          <div class="field span2">
+            <label for="a-contract">対象契約</label>
+            <select id="a-contract"></select>
+            <p class="hint" id="a-contract-supplier" style="margin-top:2px;"></p>
+          </div>
+          <div class="field">
+            <label for="a-date">入荷日</label>
+            <input type="date" id="a-date">
+          </div>
+          <div class="field">
+            <label for="a-bags">入荷袋数</label>
+            <input type="number" id="a-bags" min="0" step="1" placeholder="2">
+          </div>
+          <div class="field span2">
+            <label for="a-recorder">入力者名</label>
+            <input type="text" id="a-recorder" placeholder="例: 山田">
+          </div>
+        </div>
+        <p class="error" id="a-error"></p>
+        <button class="btn primary" id="a-add">入荷処理を記録</button>
+      </div>
+      <div class="section-heading tight"><h2>入荷履歴</h2></div>
+      <div class="table-wrap">
+        <table class="entries-table">
+          <thead>
+            <tr>
+              <th>生産国</th>
+              <th>商品名</th>
+              <th>契約番号</th>
+              <th>入荷日</th>
+              <th class="num">入荷袋数</th>
+              <th>入力者</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="arrivals-body"></tbody>
+        </table>
+        <div class="empty" id="arrivals-empty" style="display:none;">入荷履歴はまだありません。</div>
+      </div>
+    </div>
+
+    <div class="tab-panel" data-tab-panel="balance" hidden>
+      <div class="section-heading"><h2>契約ごとの残数</h2></div>
+      <p class="hint" style="padding:0 22px 10px;">「期間超過」は契約の終了月をすでに過ぎているのに残数が残っている契約です。</p>
+      <div class="table-wrap">
+        <table class="entries-table compact-table">
+          <thead>
+            <tr>
+              <th class="wrap">生産国</th>
+              <th class="wrap">商品名</th>
+              <th class="wrap">仕入先</th>
+              <th>契約番号</th>
+              <th class="wrap">使用用途</th>
+              <th>期間 / 対象月</th>
+              <th class="num">数量</th>
+              <th class="num">単価</th>
+              <th class="num">元本(袋)</th>
+              <th class="num">使用数(袋)</th>
+              <th class="num">残数(袋)</th>
+            </tr>
+          </thead>
+          <tbody id="balance-body"></tbody>
+        </table>
+        <div class="empty" id="balance-empty" style="display:none;">契約生豆を登録すると、ここに残数が表示されます。</div>
+      </div>
+
+      <div class="section-heading tight"><h2>残数が0になった契約</h2></div>
+      <div class="table-wrap">
+        <table class="entries-table compact-table">
+          <thead>
+            <tr>
+              <th class="wrap">生産国</th>
+              <th class="wrap">商品名</th>
+              <th class="wrap">仕入先</th>
+              <th>契約番号</th>
+              <th class="wrap">使用用途</th>
+              <th>期間 / 対象月</th>
+              <th class="num">数量</th>
+              <th class="num">単価</th>
+              <th class="num">元本(袋)</th>
+              <th class="num">使用数(袋)</th>
+              <th class="num">残数(袋)</th>
+            </tr>
+          </thead>
+          <tbody id="balance-completed-body"></tbody>
+        </table>
+        <div class="empty" id="balance-completed-empty" style="display:none;">残数が0になった契約はまだありません。</div>
+      </div>
+    </div>
+
+    <div class="tab-panel" data-tab-panel="matrix" hidden>
+      <div style="padding:18px 22px 4px;"><h2>各月生豆原価 (円/kg)</h2></div>
+      <div class="legend"><span class="swatch"></span>契約期間終了後、残数を消化中の月</div>
+      <div class="legend" style="padding-top:0;"><span class="swatch" style="background:transparent; border-style:dashed;"></span>前倒し引き取り可能な契約から算出した想定単価の月(斜体表示)</div>
+      <div class="legend" style="padding-top:0;"><span class="swatch" style="background:transparent; border-style:dashed;"></span>当月買いのみの銘柄で「―」をクリックすると、前月と同じ単価で当月買いとして登録できます</div>
+      <div class="table-wrap">
+        <table class="matrix" id="matrix"></table>
+        <div class="empty" id="matrix-empty" style="display:none;">仕入れを登録すると、ここに月次単価表が表示されます。</div>
+      </div>
+    </div>
+
+    <div class="tab-panel form-panel" data-tab-panel="roast" hidden>
+      <h2>焙煎豆商品を登録</h2>
+      <div class="form-grid">
+        <div class="field">
+          <label for="r-name">商品名</label>
+          <input type="text" id="r-name" placeholder="例: モーニングブレンド">
+        </div>
+        <div class="field">
+          <label for="r-name2">商品名2 (任意)</label>
+          <input type="text" id="r-name2" placeholder="例: Morning Blend">
+        </div>
+        <div class="field span2">
+          <label for="r-type">配合タイプ</label>
+          <select id="r-type">
+            <option value="single">単一銘柄品</option>
+            <option value="premix">プレミックス(生豆の状態で配合してから焙煎)</option>
+            <option value="aftermix">アフターミックス(焙煎後の商品を配合)</option>
+          </select>
+        </div>
+      </div>
+
+      <div id="r-components" style="display:flex; flex-direction:column; gap:8px; margin-top:4px;"></div>
+      <p class="hint" id="r-ratio-total" style="margin-top:2px;"></p>
+
+      <div style="display:flex; gap:10px; align-items:center; margin-top:10px; flex-wrap:wrap;">
+        <button class="btn" id="r-add-component" type="button">＋ 配合行を追加</button>
+        <div class="field" id="r-loss-field" style="width:160px;">
+          <label for="r-loss">焙煎ロス率 (%)</label>
+          <input type="number" id="r-loss" min="0" max="50" step="0.1" placeholder="15">
+        </div>
+      </div>
+      <p class="hint" id="r-hint"></p>
+      <p class="error" id="r-error"></p>
+      <div style="display:flex; gap:10px;">
+        <button class="btn primary" id="r-add" style="margin-top:6px;">＋ 焙煎豆商品を登録</button>
+        <button class="btn" id="r-cancel-edit" type="button" style="margin-top:6px; display:none;">キャンセル</button>
+      </div>
+
+      <div class="section-heading tight"><h2>登録済み焙煎豆商品</h2></div>
+      <div class="empty" id="roast-products-empty" style="display:none;">まだ焙煎豆商品が登録されていません。</div>
+
+      <div id="roast-group-premix">
+        <div class="section-heading tight"><h2><span class="badge contract">プレミックス</span></h2></div>
+        <div class="table-wrap">
+          <table class="entries-table compact-table">
+            <thead>
+              <tr>
+                <th>並び替え</th>
+                <th class="wrap">商品名</th>
+                <th class="wrap">商品名2</th>
+                <th class="wrap">配合内容</th>
+                <th class="num">焙煎ロス率</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="roast-products-body-premix"></tbody>
+          </table>
+          <div class="empty" id="roast-products-empty-premix" style="display:none;">プレミックスは登録されていません。</div>
+        </div>
+      </div>
+
+      <div id="roast-group-aftermix">
+        <div class="section-heading tight"><h2><span class="badge spot">アフターミックス</span></h2></div>
+        <div class="table-wrap">
+          <table class="entries-table compact-table">
+            <thead>
+              <tr>
+                <th>並び替え</th>
+                <th class="wrap">商品名</th>
+                <th class="wrap">商品名2</th>
+                <th class="wrap">配合内容</th>
+                <th class="num">焙煎ロス率</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="roast-products-body-aftermix"></tbody>
+          </table>
+          <div class="empty" id="roast-products-empty-aftermix" style="display:none;">アフターミックスは登録されていません。</div>
+        </div>
+      </div>
+
+      <div id="roast-group-single">
+        <div class="section-heading tight"><h2><span class="badge neutral">単一銘柄</span></h2></div>
+        <div class="table-wrap">
+          <table class="entries-table compact-table">
+            <thead>
+              <tr>
+                <th>並び替え</th>
+                <th class="wrap">商品名</th>
+                <th class="wrap">商品名2</th>
+                <th class="wrap">配合内容</th>
+                <th class="num">焙煎ロス率</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="roast-products-body-single"></tbody>
+          </table>
+          <div class="empty" id="roast-products-empty-single" style="display:none;">単一銘柄品は登録されていません。</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="tab-panel" data-tab-panel="roast-matrix" hidden>
+      <div style="padding:18px 22px 4px;"><h2>各月 焙煎後実質原価 (円/kg)</h2></div>
+      <p class="hint" style="padding:0 22px 10px;">配合するすべての使用用途・商品にその月の原価データが揃わない場合は「―」と表示されます。</p>
+      <div class="table-wrap">
+        <table class="matrix" id="roast-matrix"></table>
+        <div class="empty" id="roast-matrix-empty" style="display:none;">焙煎豆商品を登録すると、ここに月次原価が表示されます。</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel" id="entries-panel">
+    <div class="section-heading"><h2 id="entries-heading">契約生豆一覧</h2></div>
+    <div class="table-wrap">
+      <table class="entries-table">
+        <thead>
+          <tr id="entries-head-row"></tr>
+        </thead>
+        <tbody id="entries-body"></tbody>
+      </table>
+      <div class="empty" id="entries-empty" style="display:none;">まだ仕入れが登録されていません。上のフォームから追加してください。</div>
+    </div>
+  </div>
+
+  <footer>変更はチームで共有され、誰かが編集すると全員の画面に自動反映されます。オフライン時はこの端末にのみ保存されます。</footer>
+</div>
+
+<!-- Firebase SDK (compat) -->
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
+
+<script>
+  // ==================== Firebaseの設定(Firebaseコンソールから取得した値に書き換えてください) ====================
+  const firebaseConfig = {
+    apiKey: "AIzaSyCxi3PX1WXL8wjYDMFP863LjSWtyxg9jcU",
+    authDomain: "roast-cost.firebaseapp.com",
+    projectId: "roast-cost",
+    storageBucket: "roast-cost.firebasestorage.app",
+    messagingSenderId: "468771939307",
+    appId: "1:468771939307:web:460cccea2bb58e4b9d6fae"
+  };
+
+  firebase.initializeApp(firebaseConfig);
+  const auth = firebase.auth();
+  const db = firebase.firestore();
+  const ledgerDocRef = db.collection("ledger").doc("main");
+  let unsubscribeSnapshot = null;
+
+  let entries = [];
+  let activeTab = "contract";
+  let entriesSortField = null;
+  let entriesSortDir = 1;
+  let arrivals = [];
+  let nextId = 1;
+  let nextArrivalId = 1;
+  let roastedProducts = [];
+  let nextRoastId = 1;
+  let draftComponents = [];
+  let editingRoastId = null;
+  let editingContractId = null;
+
+  function fmt(n) {
+    if (!isFinite(n)) return "—";
+    return Math.round(n).toLocaleString("ja-JP");
+  }
+  function fmt1(n) {
+    if (!isFinite(n)) return "—";
+    return n.toLocaleString("ja-JP", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+  }
+  function monthLabel(ym) {
+    const [y, m] = ym.split("-");
+    return `${y}/${Number(m)}`;
+  }
+  function monthsBetween(start, end) {
+    const [sy, sm] = start.split("-").map(Number);
+    const [ey, em] = end.split("-").map(Number);
+    const out = [];
+    let y = sy, m = sm;
+    while (y < ey || (y === ey && m <= em)) {
+      out.push(`${y}-${String(m).padStart(2, "0")}`);
+      m++;
+      if (m > 12) { m = 1; y++; }
+    }
+    return out;
+  }
+
+  function attachMonthInputMask(el) {
+    el.addEventListener("input", () => {
+      const digits = el.value.replace(/\D/g, "").slice(0, 6);
+      el.value = digits.length > 4 ? `${digits.slice(0, 4)}-${digits.slice(4)}` : digits;
+    });
+    el.addEventListener("blur", () => {
+      const m = el.value.match(/^(\d{4})-(\d{1,2})$/);
+      if (!m) return;
+      const mm = Math.min(12, Math.max(1, parseInt(m[2], 10)));
+      el.value = `${m[1]}-${String(mm).padStart(2, "0")}`;
+    });
+  }
+
+  function nextMonth(ym) {
+    const [y, m] = ym.split("-").map(Number);
+    let ny = y, nm = m + 1;
+    if (nm > 12) { nm = 1; ny++; }
+    return `${ny}-${String(nm).padStart(2, "0")}`;
+  }
+
+  function prevMonth(ym) {
+    const [y, m] = ym.split("-").map(Number);
+    let py = y, pm = m - 1;
+    if (pm < 1) { pm = 12; py--; }
+    return `${py}-${String(pm).padStart(2, "0")}`;
+  }
+
+  function baseContribsForEntry(entry) {
+    if (entry.kind === "contract") {
+      const months = monthsBetween(entry.start, entry.end);
+      if (months.length === 0) return [];
+      const perMonthKg = (entry.bags / months.length) * entry.weight;
+      const perMonthCost = perMonthKg * entry.price;
+      return months.map(month => ({ brand: entry.brand, usage: entry.usage || null, month, kg: perMonthKg, cost: perMonthCost }));
+    }
+    const qty = entry.qty && entry.qty > 0 ? entry.qty : 1;
+    return [{ brand: entry.brand, usage: entry.usage || null, month: entry.month, kg: qty, cost: qty * entry.price }];
+  }
+
+  function extensionContribsForEntry(entry, tableHorizon) {
+    if (entry.kind !== "contract") return [];
+    const months = monthsBetween(entry.start, entry.end);
+    if (months.length === 0) return [];
+    const bagsLeft = entry.bags - usedBags(entry);
+    if (bagsLeft <= 0.001) return [];
+
+    const minMonth = nextMonth(entry.end);
+    const target = tableHorizon && tableHorizon > minMonth ? tableHorizon : minMonth;
+    const nominalKg = (entry.bags / months.length) * entry.weight;
+
+    const contribs = [];
+    let cursor = minMonth;
+    let guard = 0;
+    while (cursor <= target && guard < 240) {
+      contribs.push({ brand: entry.brand, usage: entry.usage || null, month: cursor, kg: nominalKg, cost: nominalKg * entry.price, extended: true });
+      cursor = nextMonth(cursor);
+      guard++;
+    }
+    return contribs;
+  }
+
+  function computeBackfillContribs(baseContribs) {
+    if (baseContribs.length === 0) return [];
+    const tableFloor = [...new Set(baseContribs.map(c => c.month))].sort()[0];
+
+    const coveredByBrand = {};
+    baseContribs.forEach(c => {
+      if (!coveredByBrand[c.brand]) coveredByBrand[c.brand] = new Set();
+      coveredByBrand[c.brand].add(c.month);
+    });
+
+    const filledByBrand = {};
+    const flaggedContracts = entries
+      .filter(e => e.kind === "contract" && e.earlyPickup)
+      .sort((a, b) => a.start.localeCompare(b.start));
+
+    const contribs = [];
+    flaggedContracts.forEach(entry => {
+      const months = monthsBetween(entry.start, entry.end);
+      if (months.length === 0) return;
+      const nominalKg = (entry.bags / months.length) * entry.weight;
+      if (!filledByBrand[entry.brand]) filledByBrand[entry.brand] = new Set();
+      const covered = coveredByBrand[entry.brand] || new Set();
+      const filled = filledByBrand[entry.brand];
+
+      let cursor = prevMonth(entry.start);
+      let guard = 0;
+      while (cursor >= tableFloor && guard < 240) {
+        if (covered.has(cursor) || filled.has(cursor)) break;
+        contribs.push({ brand: entry.brand, usage: entry.usage || null, month: cursor, kg: nominalKg, cost: nominalKg * entry.price, backfilled: true });
+        filled.add(cursor);
+        cursor = prevMonth(cursor);
+        guard++;
+      }
+    });
+    return contribs;
+  }
+
+  function getGreenCostMap() {
+    const baseContribs = entries.flatMap(baseContribsForEntry);
+    const baseMonths = [...new Set(baseContribs.map(c => c.month))].sort();
+    const tableHorizon = baseMonths.length ? baseMonths[baseMonths.length - 1] : null;
+    const extContribs = entries.flatMap(e => extensionContribsForEntry(e, tableHorizon));
+    const backfillContribs = computeBackfillContribs(baseContribs);
+    const allContribs = baseContribs.concat(extContribs).concat(backfillContribs);
+
+    const agg = {};
+    const usageAgg = {};
+    const monthSet = new Set();
+    allContribs.forEach(c => {
+      monthSet.add(c.month);
+      const key = c.brand + "|" + c.month;
+      if (!agg[key]) agg[key] = { kg: 0, cost: 0 };
+      agg[key].kg += c.kg;
+      agg[key].cost += c.cost;
+      if (c.usage) {
+        const usageKey = c.usage + "|" + c.month;
+        if (!usageAgg[usageKey]) usageAgg[usageKey] = { kg: 0, cost: 0 };
+        usageAgg[usageKey].kg += c.kg;
+        usageAgg[usageKey].cost += c.cost;
+      }
+    });
+
+    const costMap = {};
+    Object.keys(agg).forEach(key => {
+      const sep = key.lastIndexOf("|");
+      const brand = key.slice(0, sep);
+      const month = key.slice(sep + 1);
+      if (agg[key].kg > 0.0001) {
+        if (!costMap[brand]) costMap[brand] = {};
+        costMap[brand][month] = agg[key].cost / agg[key].kg;
+      }
+    });
+
+    const usageCostMap = {};
+    Object.keys(usageAgg).forEach(key => {
+      const sep = key.lastIndexOf("|");
+      const usage = key.slice(0, sep);
+      const month = key.slice(sep + 1);
+      if (usageAgg[key].kg > 0.0001) {
+        if (!usageCostMap[usage]) usageCostMap[usage] = {};
+        usageCostMap[usage][month] = usageAgg[key].cost / usageAgg[key].kg;
+      }
+    });
+
+    return { costMap, usageCostMap, months: [...monthSet].sort() };
+  }
+
+  function uniqueUsages() {
+    const set = new Set();
+    entries.forEach(e => {
+      if (e.usage) set.add(e.usage);
+    });
+    return [...set].sort((a, b) => a.localeCompare(b, "ja"));
+  }
+
+  function computeRoastedCostMap() {
+    const { usageCostMap: greenCostMap, months } = getGreenCostMap();
+    const roastedCostMap = {};
+    const missingMap = {};
+
+    roastedProducts.filter(p => p.type !== "aftermix").forEach(p => {
+      roastedCostMap[p.id] = {};
+      missingMap[p.id] = {};
+      months.forEach(month => {
+        let totalRatio = 0, weightedGreenCost = 0;
+        const missingLabels = [];
+        p.components.forEach(comp => {
+          totalRatio += comp.ratio;
+          const gc = greenCostMap[comp.ref] && greenCostMap[comp.ref][month];
+          if (gc == null) { missingLabels.push(comp.ref); return; }
+          weightedGreenCost += gc * comp.ratio;
+        });
+        if (missingLabels.length > 0 || totalRatio <= 0) {
+          missingMap[p.id][month] = missingLabels;
+          return;
+        }
+        const blendedGreen = weightedGreenCost / totalRatio;
+        const lossFrac = p.roastLoss / 100;
+        if (lossFrac >= 1) return;
+        roastedCostMap[p.id][month] = blendedGreen / (1 - lossFrac);
+      });
+    });
+
+    roastedProducts.filter(p => p.type === "aftermix").forEach(p => {
+      roastedCostMap[p.id] = {};
+      missingMap[p.id] = {};
+      months.forEach(month => {
+        let totalRatio = 0, weighted = 0;
+        const missingLabels = [];
+        p.components.forEach(comp => {
+          totalRatio += comp.ratio;
+          const rc = roastedCostMap[comp.ref] && roastedCostMap[comp.ref][month];
+          if (rc == null) {
+            const refProduct = roastedProducts.find(rp => String(rp.id) === String(comp.ref));
+            missingLabels.push(refProduct ? refProduct.name : "(削除済み商品)");
+            return;
+          }
+          weighted += rc * comp.ratio;
+        });
+        if (missingLabels.length > 0 || totalRatio <= 0) {
+          missingMap[p.id][month] = missingLabels;
+          return;
+        }
+        roastedCostMap[p.id][month] = weighted / totalRatio;
+      });
+    });
+
+    return { roastedCostMap, missingMap, months };
+  }
+
+  function addContract() {
+    const country = document.getElementById("c-country").value.trim();
+    const product = document.getElementById("c-product").value.trim();
+    const supplier = document.getElementById("c-supplier").value.trim();
+    const contractNo = document.getElementById("c-contract-no").value.trim();
+    const usage = document.getElementById("c-usage").value.trim();
+    const start = document.getElementById("c-start").value;
+    const end = document.getElementById("c-end").value;
+    const bags = Number(document.getElementById("c-bags").value);
+    const weight = Number(document.getElementById("c-weight").value);
+    const price = Number(document.getElementById("c-price").value);
+    const openingRemainingRaw = document.getElementById("c-opening-remaining").value;
+    const openingRemaining = openingRemainingRaw === "" ? null : Number(openingRemainingRaw);
+    const earlyPickup = document.getElementById("c-early-pickup").checked;
+    const errEl = document.getElementById("c-error");
+    if (!country || !product || !start || !end || !bags || !weight || !price) {
+      errEl.textContent = "すべての項目を入力してください。";
+      return;
+    }
+    if (!/^\d{4}-\d{2}$/.test(start) || !/^\d{4}-\d{2}$/.test(end)) {
+      errEl.textContent = "開始月・終了月はYYYYMMの形式で入力してください(例: 202607)。";
+      return;
+    }
+    if (start > end) {
+      errEl.textContent = "終了月は開始月以降にしてください。";
+      return;
+    }
+    if (openingRemaining !== null && openingRemaining > bags) {
+      errEl.textContent = "現在の契約残数は元本の袋数以下にしてください。";
+      return;
+    }
+    errEl.textContent = "";
+    const brand = `${country} ${product}`;
+    if (editingContractId !== null) {
+      const idx = entries.findIndex(e => e.id === editingContractId);
+      if (idx !== -1) {
+        entries[idx] = { id: editingContractId, kind: "contract", country, product, brand, supplier, contractNo, usage, start, end, bags, weight, price, openingRemaining, earlyPickup };
+      }
+      editingContractId = null;
+      document.getElementById("c-add").textContent = "＋ 契約生豆を追加";
+      document.getElementById("c-cancel-edit").style.display = "none";
+    } else {
+      entries.push({ id: nextId++, kind: "contract", country, product, brand, supplier, contractNo, usage, start, end, bags, weight, price, openingRemaining, earlyPickup });
+    }
+    document.getElementById("c-opening-remaining").value = "";
+    document.getElementById("c-early-pickup").checked = false;
+    render();
+  }
+
+  function startEditContract(id) {
+    const e = entries.find(e => e.id === id && e.kind === "contract");
+    if (!e) return;
+    editingContractId = id;
+    document.getElementById("c-country").value = e.country;
+    document.getElementById("c-product").value = e.product;
+    document.getElementById("c-supplier").value = e.supplier || "";
+    document.getElementById("c-contract-no").value = e.contractNo || "";
+    document.getElementById("c-usage").value = e.usage || "";
+    document.getElementById("c-start").value = e.start;
+    document.getElementById("c-end").value = e.end;
+    document.getElementById("c-bags").value = e.bags;
+    document.getElementById("c-weight").value = e.weight;
+    document.getElementById("c-price").value = e.price;
+    document.getElementById("c-opening-remaining").value = e.openingRemaining != null ? e.openingRemaining : "";
+    document.getElementById("c-early-pickup").checked = !!e.earlyPickup;
+    document.getElementById("c-error").textContent = "";
+    document.getElementById("c-add").textContent = "変更を保存";
+    document.getElementById("c-cancel-edit").style.display = "inline-flex";
+    if (activeTab !== "contract") {
+      document.querySelector('.tab-btn[data-tab="contract"]').click();
+    }
+    document.getElementById("c-country").scrollIntoView({ block: "center", behavior: "smooth" });
+  }
+
+  function cancelContractEdit() {
+    editingContractId = null;
+    ["c-country", "c-product", "c-supplier", "c-contract-no", "c-usage", "c-start", "c-end", "c-bags", "c-weight", "c-price", "c-opening-remaining"].forEach(id => {
+      document.getElementById(id).value = "";
+    });
+    document.getElementById("c-early-pickup").checked = false;
+    document.getElementById("c-error").textContent = "";
+    document.getElementById("c-add").textContent = "＋ 契約生豆を追加";
+    document.getElementById("c-cancel-edit").style.display = "none";
+  }
+
+  function addSpot() {
+    const country = document.getElementById("s-country").value.trim();
+    const product = document.getElementById("s-product").value.trim();
+    const month = document.getElementById("s-month").value;
+    const price = Number(document.getElementById("s-price").value);
+    const qtyRaw = document.getElementById("s-qty").value;
+    const qty = qtyRaw === "" ? null : Number(qtyRaw);
+    const usage = document.getElementById("s-usage").value.trim();
+    const errEl = document.getElementById("s-error");
+    if (!country || !product || !month || !price) {
+      errEl.textContent = "生産国名・商品名・対象月・単価を入力してください。";
+      return;
+    }
+    if (!/^\d{4}-\d{2}$/.test(month)) {
+      errEl.textContent = "対象月はYYYYMMの形式で入力してください(例: 202608)。";
+      return;
+    }
+    errEl.textContent = "";
+    const brand = `${country} ${product}`;
+    entries.push({ id: nextId++, kind: "spot", country, product, brand, month, price, qty, usage });
+    document.getElementById("s-country").value = "";
+    document.getElementById("s-product").value = "";
+    document.getElementById("s-price").value = "";
+    document.getElementById("s-qty").value = "";
+    document.getElementById("s-usage").value = "";
+    render();
+  }
+
+  function removeEntry(id) {
+    entries = entries.filter(e => e.id !== id);
+    arrivals = arrivals.filter(a => a.contractId !== id);
+    render();
+  }
+
+  function usedBags(contract) {
+    const arrivalsUsed = arrivals.filter(a => a.contractId === contract.id).reduce((sum, a) => sum + a.bags, 0);
+    const openingUsed = contract.openingRemaining !== null && contract.openingRemaining !== undefined
+      ? contract.bags - contract.openingRemaining
+      : 0;
+    return openingUsed + arrivalsUsed;
+  }
+
+  function contractLabel(c) {
+    const supplierPart = c.supplier ? `　${c.supplier}` : "";
+    return `${c.country} ${c.product}${c.contractNo ? "　" + c.contractNo : ""}${supplierPart}(${monthLabel(c.start)}〜${monthLabel(c.end)})`;
+  }
+
+  function updateContractSupplierReadout() {
+    const sel = document.getElementById("a-contract");
+    const readout = document.getElementById("a-contract-supplier");
+    const contract = entries.find(e => e.id === Number(sel.value) && e.kind === "contract");
+    readout.textContent = contract ? (contract.supplier || "") : "";
+  }
+
+  function refreshContractSelect() {
+    const countryFilterSel = document.getElementById("a-country-filter");
+    const allContracts = entries.filter(e => e.kind === "contract" && e.bags - usedBags(e) > 0.001);
+    const countries = [...new Set(allContracts.map(c => c.country))].sort((a, b) => a.localeCompare(b, "ja"));
+    const prevCountry = countryFilterSel.value;
+    countryFilterSel.innerHTML = `<option value="">すべての生産国</option>` +
+      countries.map(country => `<option value="${country}">${country}</option>`).join("");
+    if (countries.includes(prevCountry)) countryFilterSel.value = prevCountry;
+
+    const selectedCountry = countryFilterSel.value;
+    const contracts = selectedCountry ? allContracts.filter(c => c.country === selectedCountry) : allContracts;
+
+    const sel = document.getElementById("a-contract");
+    const prevValue = sel.value;
+    sel.innerHTML = contracts.length === 0
+      ? `<option value="">${selectedCountry ? "この生産国の契約がありません" : "登録済みの契約がありません"}</option>`
+      : contracts.map(c => `<option value="${c.id}">${contractLabel(c)}</option>`).join("");
+    if (contracts.some(c => String(c.id) === prevValue)) sel.value = prevValue;
+    updateContractSupplierReadout();
+  }
+
+  function addArrival() {
+    const contractId = Number(document.getElementById("a-contract").value);
+    const date = document.getElementById("a-date").value;
+    const bags = Number(document.getElementById("a-bags").value);
+    const recorder = document.getElementById("a-recorder").value.trim();
+    const errEl = document.getElementById("a-error");
+    const contract = entries.find(e => e.id === contractId && e.kind === "contract");
+    if (!contract) {
+      errEl.textContent = "対象契約を選択してください。";
+      return;
+    }
+    if (!date || !bags || !recorder) {
+      errEl.textContent = "入荷日・入荷袋数・入力者名を入力してください。";
+      return;
+    }
+    errEl.textContent = "";
+    arrivals.push({ id: nextArrivalId++, contractId, date, bags, recorder });
+    document.getElementById("a-date").value = "";
+    document.getElementById("a-bags").value = "";
+    document.getElementById("a-recorder").value = "";
+    render();
+  }
+
+  function removeArrival(id) {
+    arrivals = arrivals.filter(a => a.id !== id);
+    render();
+  }
+
+  function currentMonthStr() {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  }
+
+  function orderMonthsCurrentFirst(months) {
+    const current = currentMonthStr();
+    const future = months.filter(m => m >= current).sort();
+    const past = months.filter(m => m < current).sort();
+    return future.concat(past);
+  }
+
+  function balanceRowHtml(c) {
+    const used = usedBags(c);
+    const remaining = c.bags - used;
+    const remainingClass = remaining < 0 ? "negative" : remaining === 0 ? "zero" : "";
+    const totalKg = c.bags * c.weight;
+    const isOverdue = c.end < currentMonthStr();
+    const overdueBadge = isOverdue ? `<span class="badge overdue">期間超過</span> ` : "";
+    return `
+      <td class="brand wrap">${c.country}</td>
+      <td class="wrap">${c.product}</td>
+      <td class="wrap">${c.supplier || "—"}</td>
+      <td>${c.contractNo || "—"}</td>
+      <td class="wrap">${c.usage || "—"}</td>
+      <td>${overdueBadge}${monthLabel(c.start)} 〜 ${monthLabel(c.end)}<span class="sub">${monthsBetween(c.start, c.end).length}ヶ月</span></td>
+      <td class="num">${fmt(totalKg)} kg<span class="sub">${c.bags}袋 × ${c.weight}kg</span></td>
+      <td class="num">¥${fmt(c.price)}<span class="sub">/kg</span></td>
+      <td class="num">${fmt(c.bags)}</td>
+      <td class="num">${fmt(used)}</td>
+      <td class="num balance-remaining ${remainingClass}">${fmt(remaining)}</td>
+    `;
+  }
+
+  function renderBalance() {
+    const contracts = entries.filter(e => e.kind === "contract");
+    const active = contracts.filter(c => c.bags - usedBags(c) > 0.001);
+    const completed = contracts.filter(c => c.bags - usedBags(c) <= 0.001);
+
+    const body = document.getElementById("balance-body");
+    const empty = document.getElementById("balance-empty");
+    body.innerHTML = "";
+    empty.style.display = active.length === 0 ? "block" : "none";
+    active.forEach(c => {
+      const tr = document.createElement("tr");
+      if (c.end < currentMonthStr()) tr.classList.add("overdue-row");
+      tr.innerHTML = balanceRowHtml(c);
+      body.appendChild(tr);
+    });
+
+    const completedBody = document.getElementById("balance-completed-body");
+    const completedEmpty = document.getElementById("balance-completed-empty");
+    completedBody.innerHTML = "";
+    completedEmpty.style.display = completed.length === 0 ? "block" : "none";
+    completed.forEach(c => {
+      const tr = document.createElement("tr");
+      tr.innerHTML = balanceRowHtml(c);
+      completedBody.appendChild(tr);
+    });
+  }
+
+  function renderArrivalsHistory() {
+    const body = document.getElementById("arrivals-body");
+    const empty = document.getElementById("arrivals-empty");
+    body.innerHTML = "";
+    if (arrivals.length === 0) {
+      empty.style.display = "block";
+      return;
+    }
+    empty.style.display = "none";
+    const sorted = [...arrivals].sort((a, b) => a.date.localeCompare(b.date));
+    sorted.forEach(a => {
+      const contract = entries.find(e => e.id === a.contractId);
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td class="brand">${contract ? contract.country : "(削除済み契約)"}</td>
+        <td>${contract ? contract.product : "—"}</td>
+        <td>${contract && contract.contractNo ? contract.contractNo : "—"}</td>
+        <td>${a.date}</td>
+        <td class="num">${fmt(a.bags)}</td>
+        <td>${a.recorder}</td>
+        <td class="remove"><button class="icon-btn" data-remove-arrival="${a.id}" aria-label="削除" title="削除">✕</button></td>
+      `;
+      body.appendChild(tr);
+    });
+    body.querySelectorAll("[data-remove-arrival]").forEach(btn => {
+      btn.addEventListener("click", () => removeArrival(Number(btn.dataset.removeArrival)));
+    });
+  }
+
+  function sortLabel(field) {
+    if (entriesSortField !== field) return "";
+    return entriesSortDir === 1 ? " ▲" : " ▼";
+  }
+
+  function setEntriesSort(field) {
+    if (entriesSortField === field) {
+      entriesSortDir = -entriesSortDir;
+    } else {
+      entriesSortField = field;
+      entriesSortDir = 1;
+    }
+    renderEntries();
+  }
+
+  function renderEntries() {
+    const body = document.getElementById("entries-body");
+    const empty = document.getElementById("entries-empty");
+    const headRow = document.getElementById("entries-head-row");
+    const heading = document.getElementById("entries-heading");
+    body.innerHTML = "";
+
+    const isContractTab = activeTab === "contract";
+    heading.textContent = activeTab === "spot" ? "当月買い一覧" : "契約生豆一覧";
+    headRow.innerHTML = (isContractTab ? "" : `<th>種別</th>`) + `
+      <th class="sortable" data-sort="country">生産国${sortLabel("country")}</th>
+      <th>商品名</th>
+      <th class="sortable" data-sort="supplier">仕入先${sortLabel("supplier")}</th>
+      <th>契約番号</th>
+      <th>使用用途</th>
+      <th>期間 / 対象月</th>
+      <th class="num">数量</th>
+      <th class="num">単価</th>
+      <th></th>
+    `;
+    headRow.querySelectorAll("[data-sort]").forEach(th => {
+      th.addEventListener("click", () => setEntriesSort(th.dataset.sort));
+    });
+
+    let visibleEntries = activeTab === "spot" ? entries.filter(e => e.kind === "spot")
+      : activeTab === "contract" ? entries.filter(e => e.kind === "contract")
+      : entries;
+    if (entriesSortField) {
+      visibleEntries = [...visibleEntries].sort((a, b) => {
+        const av = a[entriesSortField] || "";
+        const bv = b[entriesSortField] || "";
+        return av.localeCompare(bv, "ja") * entriesSortDir;
+      });
+    }
+    if (visibleEntries.length === 0) {
+      empty.style.display = "block";
+      return;
+    }
+    empty.style.display = "none";
+
+    visibleEntries.forEach(e => {
+      const tr = document.createElement("tr");
+      if (e.kind === "contract") {
+        const totalKg = e.bags * e.weight;
+        const kindCell = isContractTab ? "" : `<td><span class="badge contract">契約</span></td>`;
+        const earlyBadge = e.earlyPickup ? `<span class="badge neutral" style="margin-left:4px;" title="前倒し引き取り可">前倒し可</span>` : "";
+        tr.innerHTML = kindCell + `
+          <td class="brand">${e.country}</td>
+          <td>${e.product}</td>
+          <td>${e.supplier || "—"}</td>
+          <td>${e.contractNo || "—"}</td>
+          <td>${e.usage || "—"}</td>
+          <td>${monthLabel(e.start)} 〜 ${monthLabel(e.end)}${earlyBadge}<span class="sub">${monthsBetween(e.start, e.end).length}ヶ月</span></td>
+          <td class="num">${fmt(totalKg)} kg<span class="sub">${e.bags}袋 × ${e.weight}kg</span></td>
+          <td class="num">¥${fmt(e.price)}<span class="sub">/kg</span></td>
+          <td class="remove" style="white-space:nowrap;">
+            <button class="icon-btn" data-edit-entry="${e.id}" aria-label="編集" title="編集">✎</button>
+            <button class="icon-btn" data-remove="${e.id}" aria-label="削除" title="削除">✕</button>
+          </td>
+        `;
+      } else {
+        tr.innerHTML = `
+          <td><span class="badge spot">当月買い</span></td>
+          <td class="brand">${e.country}</td>
+          <td>${e.product}</td>
+          <td>—</td>
+          <td>—</td>
+          <td>${e.usage || "—"}</td>
+          <td>${monthLabel(e.month)}</td>
+          <td class="num">${e.qty ? fmt1(e.qty) + " kg" : "—"}</td>
+          <td class="num">¥${fmt(e.price)}<span class="sub">/kg</span></td>
+          <td class="remove"><button class="icon-btn" data-remove="${e.id}" aria-label="削除" title="削除">✕</button></td>
+        `;
+      }
+      body.appendChild(tr);
+    });
+    body.querySelectorAll("[data-remove]").forEach(btn => {
+      btn.addEventListener("click", () => removeEntry(Number(btn.dataset.remove)));
+    });
+    body.querySelectorAll("[data-edit-entry]").forEach(btn => {
+      btn.addEventListener("click", () => startEditContract(Number(btn.dataset.editEntry)));
+    });
+  }
+
+  function renderMatrix() {
+    const table = document.getElementById("matrix");
+    const empty = document.getElementById("matrix-empty");
+    table.innerHTML = "";
+    if (entries.length === 0) {
+      empty.style.display = "block";
+      return;
+    }
+    empty.style.display = "none";
+
+    const baseContribs = entries.flatMap(baseContribsForEntry);
+    const baseMonths = [...new Set(baseContribs.map(c => c.month))].sort();
+    const tableHorizon = baseMonths.length ? baseMonths[baseMonths.length - 1] : null;
+    const extContribs = entries.flatMap(e => extensionContribsForEntry(e, tableHorizon));
+    const backfillContribs = computeBackfillContribs(baseContribs);
+    const allContribs = baseContribs.concat(extContribs).concat(backfillContribs);
+    const months = orderMonthsCurrentFirst([...new Set(allContribs.map(c => c.month))]);
+
+    const usageByBrand = {};
+    const countryProductByBrand = {};
+    const kindsByBrand = {};
+    entries.forEach(e => {
+      if (!countryProductByBrand[e.brand]) countryProductByBrand[e.brand] = { country: e.country, product: e.product };
+      if (!kindsByBrand[e.brand]) kindsByBrand[e.brand] = new Set();
+      kindsByBrand[e.brand].add(e.kind);
+      if (!e.usage) return;
+      if (!usageByBrand[e.brand]) usageByBrand[e.brand] = [];
+      if (!usageByBrand[e.brand].includes(e.usage)) usageByBrand[e.brand].push(e.usage);
+    });
+
+    const brands = [...new Set(allContribs.map(c => c.brand))].sort((a, b) => {
+      const aHasContract = kindsByBrand[a] && kindsByBrand[a].has("contract") ? 0 : 1;
+      const bHasContract = kindsByBrand[b] && kindsByBrand[b].has("contract") ? 0 : 1;
+      return aHasContract - bHasContract || a.localeCompare(b, "ja");
+    });
+
+    const agg = {};
+    allContribs.forEach(c => {
+      const key = c.brand + "|" + c.month;
+      if (!agg[key]) agg[key] = { kg: 0, cost: 0, extended: false, backfilled: false };
+      agg[key].kg += c.kg;
+      agg[key].cost += c.cost;
+      if (c.extended) agg[key].extended = true;
+      if (c.backfilled) agg[key].backfilled = true;
+    });
+
+    const currentMonth = currentMonthStr();
+
+    const thead = document.createElement("thead");
+    const headRow = document.createElement("tr");
+    headRow.innerHTML = `<th class="brand-col">銘柄</th><th class="kind-col">種別</th><th class="usage-col">用途</th>` + months.map(m => {
+      const isCurrent = m === currentMonth;
+      return `<th class="num${isCurrent ? " current-month" : ""}">${monthLabel(m)}${isCurrent ? `<span class="sub">今月</span>` : ""}</th>`;
+    }).join("");
+    thead.appendChild(headRow);
+    table.appendChild(thead);
+
+    const tbody = document.createElement("tbody");
+    brands.forEach(brand => {
+      const tr = document.createElement("tr");
+      const usage = usageByBrand[brand] ? usageByBrand[brand].join(" / ") : "—";
+      const info = countryProductByBrand[brand] || { country: brand, product: "" };
+      const kinds = kindsByBrand[brand] || new Set();
+      const kindBadges = [
+        kinds.has("contract") ? `<span class="badge contract">契約生豆</span>` : "",
+        kinds.has("spot") ? `<span class="badge spot">当月買い</span>` : ""
+      ].join("");
+      const spotOnly = kinds.size === 1 && kinds.has("spot");
+      let cells = `<td class="brand-col"><span class="brand-country">${info.country}</span><span class="brand-product">${info.product}</span></td><td class="kind-col">${kindBadges}</td><td class="usage-col">${usage}</td>`;
+      months.forEach(m => {
+        const cell = agg[brand + "|" + m];
+        const curCls = m === currentMonth ? " current-month" : "";
+        if (cell && cell.kg > 0) {
+          const unitPrice = cell.cost / cell.kg;
+          const stateCls = cell.extended ? " extended" : cell.backfilled ? " backfilled" : "";
+          const cls = "cell" + stateCls + curCls;
+          const title = cell.extended
+            ? ` title="契約期間終了後、残数消化中"`
+            : cell.backfilled
+              ? ` title="前倒し引き取り可能な契約から算出した想定単価"`
+              : "";
+          cells += `<td class="${cls}"${title}>¥${fmt(unitPrice)}<span class="unit">/kg</span></td>`;
+        } else {
+          const prevCell = spotOnly ? agg[brand + "|" + prevMonth(m)] : null;
+          if (prevCell && prevCell.kg > 0) {
+            const prevPrice = Math.round(prevCell.cost / prevCell.kg);
+            cells += `<td class="cell empty-cell fillable${curCls}" data-fill-brand="${brand}" data-fill-month="${m}" data-fill-price="${prevPrice}" title="クリックで前月と同じ単価(¥${fmt(prevPrice)}/kg)を当月買いとして登録">―</td>`;
+          } else {
+            cells += `<td class="cell empty-cell${curCls}">―</td>`;
+          }
+        }
+      });
+      tr.innerHTML = cells;
+      tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+
+    table.querySelectorAll("[data-fill-brand]").forEach(td => {
+      td.addEventListener("click", () => {
+        fillSpotFromPrevMonth(td.dataset.fillBrand, td.dataset.fillMonth, Number(td.dataset.fillPrice));
+      });
+    });
+  }
+
+  function fillSpotFromPrevMonth(brand, month, price) {
+    const source = entries.find(e => e.brand === brand);
+    if (!source) return;
+    entries.push({
+      id: nextId++,
+      kind: "spot",
+      country: source.country,
+      product: source.product,
+      brand,
+      month,
+      price,
+      qty: null,
+      usage: source.usage || ""
+    });
+    render();
+  }
+
+  function roastTypeLabel(type) {
+    return type === "single" ? "単一銘柄" : type === "premix" ? "プレミックス" : "アフターミックス";
+  }
+
+  function renderComponentRows() {
+    const container = document.getElementById("r-components");
+    const type = document.getElementById("r-type").value;
+    const lossField = document.getElementById("r-loss-field");
+    const addBtn = document.getElementById("r-add-component");
+    lossField.style.display = type === "aftermix" ? "none" : "flex";
+    addBtn.style.display = type === "single" ? "none" : "inline-flex";
+    document.getElementById("r-hint").textContent = type === "aftermix"
+      ? "配合する既存の焙煎豆商品を選んでください。"
+      : "契約生豆の「使用用途」欄で登録した名称から選びます(契約残数管理タブで確認できます)。";
+
+    const usages = uniqueUsages();
+    const otherProducts = roastedProducts.filter(p => p.type !== "aftermix");
+
+    if (type === "single" && draftComponents.length === 0) {
+      draftComponents.push({ ref: "", ratio: 100 });
+    }
+
+    container.innerHTML = "";
+    draftComponents.forEach((comp, idx) => {
+      const row = document.createElement("div");
+      row.style.cssText = "display:flex; gap:8px; align-items:flex-end;";
+      const options = type === "aftermix"
+        ? otherProducts.map(p => `<option value="${p.id}" ${String(p.id) === String(comp.ref) ? "selected" : ""}>${p.name}</option>`).join("")
+        : usages.map(u => `<option value="${u}" ${u === comp.ref ? "selected" : ""}>${u}</option>`).join("");
+      const emptyOption = usages.length === 0 && type !== "aftermix"
+        ? `<option value="">契約生豆に使用用途が登録されていません</option>`
+        : `<option value="">選択してください</option>`;
+      const ratioField = type === "single"
+        ? `<div class="field" style="width:90px;"><label>配合比率</label><input type="text" value="100%" disabled></div>`
+        : `<div class="field" style="width:90px;"><label>配合比率(%)</label><input type="number" min="0" max="100" step="0.1" value="${comp.ratio}" data-ratio-idx="${idx}"></div>`;
+      row.innerHTML = `
+        <div class="field" style="flex:1;">
+          <label>${type === "aftermix" ? "焙煎商品" : "使用用途"}</label>
+          <select data-ref-idx="${idx}">${emptyOption}${options}</select>
+        </div>
+        ${ratioField}
+        ${type === "single" ? "" : `<button class="icon-btn" data-remove-comp="${idx}" type="button" title="削除">✕</button>`}
+      `;
+      container.appendChild(row);
+    });
+
+    container.querySelectorAll("[data-ref-idx]").forEach(sel => {
+      sel.addEventListener("change", () => {
+        draftComponents[Number(sel.dataset.refIdx)].ref = sel.value;
+      });
+    });
+    container.querySelectorAll("[data-ratio-idx]").forEach(input => {
+      input.addEventListener("input", () => {
+        draftComponents[Number(input.dataset.ratioIdx)].ratio = Number(input.value);
+        updateRatioTotalReadout();
+      });
+    });
+    container.querySelectorAll("[data-remove-comp]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        draftComponents.splice(Number(btn.dataset.removeComp), 1);
+        renderComponentRows();
+      });
+    });
+
+    updateRatioTotalReadout();
+  }
+
+  function updateRatioTotalReadout() {
+    const readout = document.getElementById("r-ratio-total");
+    const type = document.getElementById("r-type").value;
+    if (type === "single") {
+      readout.textContent = "";
+      return;
+    }
+    const total = draftComponents.reduce((s, c) => s + (Number(c.ratio) || 0), 0);
+    const ok = Math.abs(total - 100) <= 0.05;
+    readout.textContent = `配合比率の合計: ${total}%${ok ? "" : "(100%になるよう調整してください)"}`;
+    readout.style.color = ok ? "var(--accent-ink)" : "var(--danger)";
+  }
+
+  function addRoastProduct() {
+    const name = document.getElementById("r-name").value.trim();
+    const name2 = document.getElementById("r-name2").value.trim();
+    const type = document.getElementById("r-type").value;
+    const lossRaw = document.getElementById("r-loss").value;
+    const errEl = document.getElementById("r-error");
+
+    if (!name) {
+      errEl.textContent = "商品名を入力してください。";
+      return;
+    }
+    const components = draftComponents.filter(c => c.ref && c.ratio > 0).map(c => ({ ref: c.ref, ratio: c.ratio }));
+    if (components.length === 0) {
+      errEl.textContent = "配合内容を1件以上選択してください。";
+      return;
+    }
+    const totalRatio = components.reduce((s, c) => s + c.ratio, 0);
+    if (Math.abs(totalRatio - 100) > 0.05) {
+      errEl.textContent = `配合比率の合計が100%になっていないため登録できません(現在の合計: ${totalRatio}%)。`;
+      return;
+    }
+    let roastLoss = null;
+    if (type !== "aftermix") {
+      roastLoss = Number(lossRaw);
+      if (!lossRaw || roastLoss < 0 || roastLoss >= 100) {
+        errEl.textContent = "焙煎ロス率を0〜100未満で入力してください。";
+        return;
+      }
+    }
+
+    errEl.textContent = "";
+    if (editingRoastId !== null) {
+      const idx = roastedProducts.findIndex(p => p.id === editingRoastId);
+      if (idx !== -1) {
+        roastedProducts[idx] = { id: editingRoastId, name, name2, type, roastLoss, components };
+      }
+      editingRoastId = null;
+    } else {
+      roastedProducts.push({ id: nextRoastId++, name, name2, type, roastLoss, components });
+    }
+    document.getElementById("r-name").value = "";
+    document.getElementById("r-name2").value = "";
+    document.getElementById("r-loss").value = "";
+    document.getElementById("r-add").textContent = "＋ 焙煎豆商品を登録";
+    document.getElementById("r-cancel-edit").style.display = "none";
+    draftComponents = [];
+    renderComponentRows();
+    render();
+  }
+
+  function startEditRoastProduct(id) {
+    const p = roastedProducts.find(p => p.id === id);
+    if (!p) return;
+    editingRoastId = id;
+    document.getElementById("r-name").value = p.name;
+    document.getElementById("r-name2").value = p.name2 || "";
+    document.getElementById("r-type").value = p.type;
+    document.getElementById("r-loss").value = p.roastLoss != null ? p.roastLoss : "";
+    document.getElementById("r-error").textContent = "";
+    document.getElementById("r-add").textContent = "変更を保存";
+    document.getElementById("r-cancel-edit").style.display = "inline-flex";
+    draftComponents = p.components.map(c => ({ ref: c.ref, ratio: c.ratio }));
+    renderComponentRows();
+    document.getElementById("r-name").scrollIntoView({ block: "center", behavior: "smooth" });
+  }
+
+  function cancelRoastEdit() {
+    editingRoastId = null;
+    document.getElementById("r-name").value = "";
+    document.getElementById("r-name2").value = "";
+    document.getElementById("r-loss").value = "";
+    document.getElementById("r-error").textContent = "";
+    document.getElementById("r-add").textContent = "＋ 焙煎豆商品を登録";
+    document.getElementById("r-cancel-edit").style.display = "none";
+    draftComponents = [];
+    renderComponentRows();
+  }
+
+  function moveRoastProduct(id, direction) {
+    const idx = roastedProducts.findIndex(p => p.id === id);
+    if (idx === -1) return;
+    const type = roastedProducts[idx].type;
+    let j = idx + direction;
+    while (j >= 0 && j < roastedProducts.length && roastedProducts[j].type !== type) {
+      j += direction;
+    }
+    if (j < 0 || j >= roastedProducts.length) return;
+    [roastedProducts[idx], roastedProducts[j]] = [roastedProducts[j], roastedProducts[idx]];
+    render();
+  }
+
+  function removeRoastProduct(id) {
+    roastedProducts = roastedProducts.filter(p => p.id !== id);
+    render();
+  }
+
+  function componentSummary(p) {
+    return p.components.map(c => {
+      const label = p.type === "aftermix"
+        ? (roastedProducts.find(rp => String(rp.id) === String(c.ref))?.name || "(削除済み)")
+        : c.ref;
+      return `${label} ${c.ratio}%`;
+    }).join(" + ");
+  }
+
+  function renderRoastProductGroup(type) {
+    const body = document.getElementById(`roast-products-body-${type}`);
+    const empty = document.getElementById(`roast-products-empty-${type}`);
+    const group = roastedProducts.filter(p => p.type === type);
+    body.innerHTML = "";
+    if (group.length === 0) {
+      empty.style.display = "block";
+      return;
+    }
+    empty.style.display = "none";
+    group.forEach((p, idx) => {
+      const tr = document.createElement("tr");
+      const upDisabled = idx === 0 ? "disabled" : "";
+      const downDisabled = idx === group.length - 1 ? "disabled" : "";
+      tr.innerHTML = `
+        <td style="white-space:nowrap;">
+          <button class="icon-btn" data-move-up="${p.id}" ${upDisabled} aria-label="上へ" title="上へ">▲</button>
+          <button class="icon-btn" data-move-down="${p.id}" ${downDisabled} aria-label="下へ" title="下へ">▼</button>
+        </td>
+        <td class="brand wrap">${p.name}</td>
+        <td class="wrap">${p.name2 || "—"}</td>
+        <td class="wrap">${componentSummary(p)}</td>
+        <td class="num">${p.roastLoss != null ? p.roastLoss + "%" : "—"}</td>
+        <td class="remove" style="white-space:nowrap;">
+          <button class="icon-btn" data-edit-roast="${p.id}" aria-label="編集" title="編集">✎</button>
+          <button class="icon-btn" data-remove-roast="${p.id}" aria-label="削除" title="削除">✕</button>
+        </td>
+      `;
+      body.appendChild(tr);
+    });
+    body.querySelectorAll("[data-remove-roast]").forEach(btn => {
+      btn.addEventListener("click", () => removeRoastProduct(Number(btn.dataset.removeRoast)));
+    });
+    body.querySelectorAll("[data-edit-roast]").forEach(btn => {
+      btn.addEventListener("click", () => startEditRoastProduct(Number(btn.dataset.editRoast)));
+    });
+    body.querySelectorAll("[data-move-up]").forEach(btn => {
+      btn.addEventListener("click", () => moveRoastProduct(Number(btn.dataset.moveUp), -1));
+    });
+    body.querySelectorAll("[data-move-down]").forEach(btn => {
+      btn.addEventListener("click", () => moveRoastProduct(Number(btn.dataset.moveDown), 1));
+    });
+  }
+
+  function renderRoastProducts() {
+    document.getElementById("roast-products-empty").style.display = roastedProducts.length === 0 ? "block" : "none";
+    ["premix", "aftermix", "single"].forEach(type => {
+      document.getElementById(`roast-group-${type}`).style.display = roastedProducts.length === 0 ? "none" : "block";
+      renderRoastProductGroup(type);
+    });
+  }
+
+  function renderRoastMatrix() {
+    const table = document.getElementById("roast-matrix");
+    const empty = document.getElementById("roast-matrix-empty");
+    table.innerHTML = "";
+    if (roastedProducts.length === 0) {
+      empty.style.display = "block";
+      return;
+    }
+    empty.style.display = "none";
+
+    const { roastedCostMap, missingMap, months: monthsRaw } = computeRoastedCostMap();
+    const months = orderMonthsCurrentFirst(monthsRaw);
+    const groupOrder = ["premix", "aftermix", "single"];
+    const orderedProducts = groupOrder.flatMap(type => roastedProducts.filter(p => p.type === type));
+    const currentMonth = currentMonthStr();
+
+    const thead = document.createElement("thead");
+    const headRow = document.createElement("tr");
+    headRow.innerHTML = `<th class="brand-col">焙煎商品</th><th>配合タイプ</th>` + months.map(m => {
+      const isCurrent = m === currentMonth;
+      return `<th class="num${isCurrent ? " current-month" : ""}">${monthLabel(m)}${isCurrent ? `<span class="sub">今月</span>` : ""}</th>`;
+    }).join("");
+    thead.appendChild(headRow);
+    table.appendChild(thead);
+
+    const badgeClass = { premix: "contract", aftermix: "spot", single: "neutral" };
+
+    const tbody = document.createElement("tbody");
+    orderedProducts.forEach(p => {
+      const tr = document.createElement("tr");
+      let cells = `<td class="brand-col">${p.name}</td><td><span class="badge ${badgeClass[p.type]}">${roastTypeLabel(p.type)}</span></td>`;
+      months.forEach(m => {
+        const price = roastedCostMap[p.id] && roastedCostMap[p.id][m];
+        const curCls = m === currentMonth ? " current-month" : "";
+        if (price != null) {
+          cells += `<td class="cell${curCls}">¥${fmt(price)}<span class="unit">/kg</span></td>`;
+        } else {
+          const missing = (missingMap[p.id] && missingMap[p.id][m]) || [];
+          const reason = missing.length > 0
+            ? `${missing.join("・")} の原価が未登録のため計算できません`
+            : "配合内容が未設定のため計算できません";
+          cells += `<td class="cell empty-cell${curCls}" title="${reason}">―</td>`;
+        }
+      });
+      tr.innerHTML = cells;
+      tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+  }
+
+  // ==================== 永続化(Firestore + オフライン用ローカル保存) ====================
+  const STORAGE_KEY = "green-bean-ledger-v1";
+  let suppressSave = true;
+
+  function setSyncStatus(text) {
+    const el = document.getElementById("sync-status");
+    if (el) el.textContent = text;
+  }
+
+  function saveStateLocal() {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ entries, arrivals, nextId, nextArrivalId, roastedProducts, nextRoastId }));
+    } catch (e) { /* storage unavailable, ignore */ }
+  }
+
+  function loadStateLocal() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return false;
+      const data = JSON.parse(raw);
+      if (!data || !Array.isArray(data.entries)) return false;
+      applyState(data);
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function applyState(data) {
+    entries = data.entries || [];
+    arrivals = data.arrivals || [];
+    nextId = data.nextId || (Math.max(0, ...entries.map(e => e.id)) + 1);
+    nextArrivalId = data.nextArrivalId || (Math.max(0, ...arrivals.map(a => a.id)) + 1);
+    roastedProducts = data.roastedProducts || [];
+    nextRoastId = data.nextRoastId || (Math.max(0, ...roastedProducts.map(p => p.id)) + 1);
+  }
+
+  function renderAll() {
+    renderEntries();
+    renderMatrix();
+    refreshContractSelect();
+    renderBalance();
+    renderArrivalsHistory();
+    renderComponentRows();
+    renderRoastProducts();
+    renderRoastMatrix();
+  }
+
+  function saveToFirestore() {
+    const state = { entries, arrivals, nextId, nextArrivalId, roastedProducts, nextRoastId };
+    ledgerDocRef.set(state).then(() => {
+      setSyncStatus("");
+    }).catch(err => {
+      setSyncStatus("チームへの共有に失敗しました(この端末には保存済みです): " + err.message);
+    });
+  }
+
+  // ユーザー操作(追加・編集・削除など)から呼ぶ: 表示を更新し、ローカル保存 + Firestoreへ書き込む
+  function render() {
+    renderAll();
+    saveStateLocal();
+    if (!suppressSave) saveToFirestore();
+  }
+
+  function subscribeToLedger() {
+    if (unsubscribeSnapshot) unsubscribeSnapshot();
+    unsubscribeSnapshot = ledgerDocRef.onSnapshot(doc => {
+      if (doc.exists) {
+        applyState(doc.data());
+      }
+      renderAll();
+    }, err => {
+      setSyncStatus("同期エラー: " + err.message + "(この端末の保存内容を表示しています)");
+    });
+  }
+
+  document.getElementById("c-add").addEventListener("click", addContract);
+  document.getElementById("s-add").addEventListener("click", addSpot);
+  document.getElementById("a-add").addEventListener("click", addArrival);
+  document.getElementById("a-country-filter").addEventListener("change", refreshContractSelect);
+  document.getElementById("a-contract").addEventListener("change", updateContractSupplierReadout);
+
+  document.getElementById("r-add").addEventListener("click", addRoastProduct);
+  document.getElementById("r-add-component").addEventListener("click", () => {
+    draftComponents.push({ ref: "", ratio: 0 });
+    renderComponentRows();
+  });
+  document.getElementById("r-type").addEventListener("change", () => {
+    draftComponents = [];
+    document.getElementById("r-error").textContent = "";
+    renderComponentRows();
+  });
+  document.getElementById("r-cancel-edit").addEventListener("click", cancelRoastEdit);
+
+  document.getElementById("c-clear").addEventListener("click", cancelContractEdit);
+  document.getElementById("c-cancel-edit").addEventListener("click", cancelContractEdit);
+
+  document.querySelectorAll(".month-input").forEach(attachMonthInputMask);
+
+  document.querySelectorAll(".tab-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const target = btn.dataset.tab;
+      activeTab = target;
+      document.querySelectorAll(".tab-btn").forEach(b => {
+        b.classList.toggle("active", b === btn);
+        b.setAttribute("aria-selected", b === btn ? "true" : "false");
+      });
+      document.querySelectorAll(".tab-panel").forEach(panel => {
+        panel.hidden = panel.dataset.tabPanel !== target;
+      });
+      document.getElementById("entries-panel").hidden = target === "balance" || target === "arrival" || target === "matrix" || target === "roast" || target === "roast-matrix";
+      if (target === "roast") renderComponentRows();
+      renderEntries();
+    });
+  });
+
+  // ==================== 認証(Googleサインイン) ====================
+  const gateEl = document.getElementById("gate");
+  const appEl = document.getElementById("app");
+  const gateErrorEl = document.getElementById("gate-error");
+
+  document.getElementById("signin-btn").addEventListener("click", () => {
+    gateErrorEl.textContent = "";
+    const provider = new firebase.auth.GoogleAuthProvider();
+    auth.signInWithPopup(provider).catch(err => {
+      gateErrorEl.textContent = "サインインに失敗しました: " + err.message;
+    });
+  });
+
+  document.getElementById("signout-btn").addEventListener("click", () => {
+    if (unsubscribeSnapshot) { unsubscribeSnapshot(); unsubscribeSnapshot = null; }
+    auth.signOut();
+  });
+
+  auth.onAuthStateChanged(user => {
+    if (!user) {
+      gateEl.hidden = false;
+      appEl.hidden = true;
+      if (unsubscribeSnapshot) { unsubscribeSnapshot(); unsubscribeSnapshot = null; }
+      return;
+    }
+    document.getElementById("account-email").textContent = user.email;
+
+    // まずローカル保存分で即表示(オフラインでも操作できるように)
+    suppressSave = true;
+    if (!loadStateLocal()) {
+      entries.push({ id: nextId++, kind: "contract", country: "エチオピア", product: "イルガチェフェ", brand: "エチオピア イルガチェフェ", supplier: "〇〇商事", contractNo: "2026-0142", usage: "シングルオリジン販売用", start: "2026-08", end: "2026-12", bags: 10, weight: 30, price: 900, openingRemaining: null });
+      nextId = 2;
+    }
+    renderAll();
+
+    // Firestoreからの読み取り権限を確認(許可リスト外なら permission-denied が返る)
+    ledgerDocRef.get().then(() => {
+      gateEl.hidden = true;
+      appEl.hidden = false;
+      subscribeToLedger();
+      suppressSave = false;
+    }).catch(err => {
+      if (err.code === "permission-denied") {
+        gateErrorEl.textContent = "このアカウント(" + user.email + ")にはアクセス権がありません。管理者に許可リストへの追加を依頼してください。";
+        auth.signOut();
+      } else {
+        gateErrorEl.textContent = "接続エラー: " + err.message;
+      }
+    });
+  });
+</script>
+</body>
+</html>
