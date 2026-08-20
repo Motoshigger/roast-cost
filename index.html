@@ -1021,6 +1021,7 @@
               <th class="num">現在庫</th>
               <th class="num">残り期間</th>
               <th>在庫切れ予測時期</th>
+              <th>前回契約の数量・単価</th>
             </tr>
           </thead>
           <tbody id="forecast-body"></tbody>
@@ -1467,6 +1468,16 @@
     return quarters;
   }
 
+  // 使用用途ごとに、開始月が一番新しい契約(=前回契約)を返す({使用用途: 契約})
+  function getLastContractByUsage() {
+    const last = {};
+    entries.filter(e => e.kind === "contract" && e.usage).forEach(c => {
+      const cur = last[c.usage];
+      if (!cur || c.start > cur.start) last[c.usage] = c;
+    });
+    return last;
+  }
+
   // 使用用途ごとの現在の契約残数(kg)。まだ使い切っていない契約のみ合算する。
   function getUsageRemainingKg() {
     const remaining = {};
@@ -1487,6 +1498,7 @@
 
     const remainingByUsage = getUsageRemainingKg();
     const combined = getCombinedUsageMonthlyKg();
+    const lastContractByUsage = getLastContractByUsage();
     const lastCompleteMonth = prevMonth(currentMonthStr());
 
     const rows = Object.keys(remainingByUsage).map(usage => {
@@ -1521,12 +1533,17 @@
         : r.monthsRemaining <= 2 ? " style=\"color:var(--danger);font-weight:600;\""
         : r.monthsRemaining <= 3 ? " style=\"color:var(--accent);font-weight:600;\""
         : "";
+      const lc = lastContractByUsage[r.usage];
+      const lastContractText = lc
+        ? `${fmt(lc.bags)}袋(${fmt(lc.bags * lc.weight)}kg)<span class="sub">¥${fmt(lc.price)}/kg・${monthLabel(lc.start)}〜${monthLabel(lc.end)}</span>`
+        : "―";
       return `
         <tr>
           <td class="brand">${r.usage}</td>
           <td class="num">${fmt1(remainingBags)}袋<span class="sub">${fmt(r.remainingKg)}kg</span></td>
           <td class="num"${urgentCls}>${periodText}</td>
           <td${urgentCls}>${runOutText}</td>
+          <td class="num">${lastContractText}</td>
         </tr>
       `;
     }).join("");
