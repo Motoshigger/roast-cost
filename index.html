@@ -717,6 +717,7 @@
         <button class="tab-btn" data-tab="matrix" role="tab" aria-selected="false">各月生豆原価</button>
         <button class="tab-btn" data-tab="roast-matrix" role="tab" aria-selected="false">各月焙煎豆原価</button>
         <button class="tab-btn" data-tab="payment" role="tab" aria-selected="false">支払い管理</button>
+        <button class="tab-btn" data-tab="payment-gap" role="tab" aria-selected="false">支払い管理(未契約分含む予測)</button>
 
         <span class="tab-group-label muted">その他</span>
         <button class="tab-btn tab-btn-muted" data-tab="roast" role="tab" aria-selected="false">焙煎豆商品登録</button>
@@ -774,6 +775,10 @@
         <div class="field span2" style="flex-direction:row; align-items:center; gap:8px;">
           <input type="checkbox" id="c-early-pickup" style="width:auto;">
           <label for="c-early-pickup" style="margin:0;">前倒し引き取り可(開始月より前でも引き取れる契約)</label>
+        </div>
+        <div class="field span2" style="flex-direction:row; align-items:center; gap:8px;">
+          <input type="checkbox" id="c-exclude-forecast" style="width:auto;">
+          <label for="c-exclude-forecast" style="margin:0;">大口スポット発注(「支払い管理(未契約分含む予測)」の次回発注予測から除外する)</label>
         </div>
       </div>
       <p class="hint">総量(袋数×重量)と総額を、開始月〜終了月の月数で均等に割り振ります。すでに一部使用済みの契約を登録する場合のみ「現在の契約残数」に今の残り袋数を入力してください(通常は空欄でOKです)。「前倒し引き取り可」にチェックすると、開始月より前で他に原価データが無い月にもこの契約の単価を反映します。追加後も入力内容は残るので、期間だけ変えて連続登録できます。</p>
@@ -1073,6 +1078,13 @@
       <p class="hint" style="padding:0 22px 10px;">実際の入荷処理の記録を待たず、現在の契約残数と使用実績(直近1年平均のペース)から「今後どの契約がいつ消化されるか」を予測し、仕入先ごとの支払い条件をあてはめて、何月にいくら支払いが発生しそうかを支払い条件のグループごとに表で表示します。同じ使用用途に複数の契約がある場合は、契約終了月が早いものから使う想定です。</p>
       <div id="payment-groups"></div>
       <div class="empty" id="payment-empty" style="display:none; margin:0 22px;">契約残数・使用実績のデータが揃うと、ここに支払い予測が表示されます。</div>
+    </div>
+
+    <div class="tab-panel" data-tab-panel="payment-gap" hidden>
+      <div style="padding:18px 22px 4px;"><h2>支払い管理(未契約分含む予測)</h2></div>
+      <p class="hint" style="padding:0 22px 10px;">既に契約が埋まっている期間はその契約の数量・単価をそのまま使い、契約で埋まっていない期間(在庫が尽きた後)は、前月の使用実績の数量と単価をそのまま当てはめて「まだ契約していない発注分」も含めて支払い予測を行います。仕入先が未定のため、契約が埋まっていない分は便宜上すべて「未定(20日締め翌々月15日払い想定)」として扱います。契約登録画面で「大口スポット発注」にチェックした契約は、この未契約分予測の計算からは除外されます(在庫切れの判定が実態より遅く出るのを防ぐためです)。</p>
+      <div id="payment-gap-groups"></div>
+      <div class="empty" id="payment-gap-empty" style="display:none; margin:0 22px;">契約残数・使用実績のデータが揃うと、ここに支払い予測が表示されます。</div>
     </div>
 
     <div class="tab-panel" data-tab-panel="history" hidden>
@@ -1675,34 +1687,16 @@
     return contribs;
   }
 
-  function renderPayment() {
-    const container = document.getElementById("payment-groups");
-    const emptyEl = document.getElementById("payment-empty");
-    if (!container) return;
+  // amountByMonthSupplier({支払月:{仕入先:金額}})からグループ別マトリクス表を組み立ててcontainerに描画する共通処理
+  function renderPaymentGroupTables(container, amountByMonthSupplier, extraCutoffSuppliers) {
     container.innerHTML = "";
+    const allSuppliers = new Set();
+    Object.values(amountByMonthSupplier).forEach(bySupplier => Object.keys(bySupplier).forEach(s => allSuppliers.add(s)));
 
-    const contribs = projectPaymentConsumption();
-
-    // (支払月, 仕入先)ごとに金額を合算
-    const amountByMonthSupplier = {}; // { payMonth: { supplier: amount } }
-    contribs.forEach(c => {
-      const amount = c.kg * c.price;
-      const payMonth = nextMonth(nextMonth(c.month));
-      if (!amountByMonthSupplier[payMonth]) amountByMonthSupplier[payMonth] = {};
-      amountByMonthSupplier[payMonth][c.supplier] = (amountByMonthSupplier[payMonth][c.supplier] || 0) + amount;
-    });
-
-    if (Object.keys(amountByMonthSupplier).length === 0) {
-      emptyEl.style.display = "block";
-      return;
-    }
-    emptyEl.style.display = "none";
-
-    // 支払い条件のグループを作る(20日締め翌々月15日払い / 月末締め翌々月末払い / 条件未設定)
-    const cutoffSuppliers = Object.keys(PAYMENT_TERMS).filter(s => PAYMENT_TERMS[s].type === "cutoff20");
+    const cutoffSuppliers = [...Object.keys(PAYMENT_TERMS).filter(s => PAYMENT_TERMS[s].type === "cutoff20"), ...(extraCutoffSuppliers || [])];
     const monthendSuppliers = Object.keys(PAYMENT_TERMS).filter(s => PAYMENT_TERMS[s].type === "monthend");
     const knownSuppliers = new Set([...cutoffSuppliers, ...monthendSuppliers]);
-    const unknownSuppliers = [...new Set(contribs.map(c => c.supplier))].filter(s => !knownSuppliers.has(s)).sort((a, b) => a.localeCompare(b, "ja"));
+    const unknownSuppliers = [...allSuppliers].filter(s => !knownSuppliers.has(s)).sort((a, b) => a.localeCompare(b, "ja"));
 
     const groupDefs = [
       { title: "20日締め翌々月15日払い", suppliers: cutoffSuppliers },
@@ -1751,6 +1745,116 @@
       `;
       container.appendChild(section);
     });
+  }
+
+  function renderPayment() {
+    const container = document.getElementById("payment-groups");
+    const emptyEl = document.getElementById("payment-empty");
+    if (!container) return;
+
+    const contribs = projectPaymentConsumption();
+    const amountByMonthSupplier = {};
+    contribs.forEach(c => {
+      const amount = c.kg * c.price;
+      const payMonth = nextMonth(nextMonth(c.month));
+      if (!amountByMonthSupplier[payMonth]) amountByMonthSupplier[payMonth] = {};
+      amountByMonthSupplier[payMonth][c.supplier] = (amountByMonthSupplier[payMonth][c.supplier] || 0) + amount;
+    });
+
+    if (Object.keys(amountByMonthSupplier).length === 0) {
+      container.innerHTML = "";
+      emptyEl.style.display = "block";
+      return;
+    }
+    emptyEl.style.display = "none";
+    renderPaymentGroupTables(container, amountByMonthSupplier);
+  }
+
+  // 使用用途ごとの最新の生豆原価(円/kg)を取得する
+  function getLatestUsagePrice(usage) {
+    const { usageCostMap } = getGreenCostMap();
+    const monthMap = usageCostMap[usage];
+    if (!monthMap) return null;
+    const months = Object.keys(monthMap).sort();
+    if (months.length === 0) return null;
+    return monthMap[months[months.length - 1]];
+  }
+
+  const GAP_SUPPLIER_LABEL = "未定(20日締め翌々月15日払い想定)";
+
+  // 契約残数と使用実績から、今後12ヶ月分の消化を予測する。契約で埋まっている間はその契約の数量・単価を、
+  // 契約で埋まらない期間(在庫切れ後)は前月の使用実績の数量・単価をそのまま使い、GAP_SUPPLIER_LABELとして扱う。
+  // 「大口スポット発注」にチェックされた契約は、この在庫切れ判定の対象から除外する。
+  function projectPaymentConsumptionWithGap(horizonMonths) {
+    const combined = getCombinedUsageMonthlyKg();
+    const lastCompleteMonth = prevMonth(currentMonthStr());
+    const usages = new Set(uniqueUsages());
+    Object.keys(historicalUsageKg).forEach(u => usages.add(u));
+
+    const contribs = [];
+    usages.forEach(usage => {
+      const queue = entries
+        .filter(e => e.kind === "contract" && e.usage === usage && !e.excludeFromForecast && e.bags - usedBags(e) > 0.001)
+        .sort((a, b) => a.end.localeCompare(b.end))
+        .map(c => ({ contract: c, remainingKg: (c.bags - usedBags(c)) * c.weight }));
+
+      let avgMonthlyKg = trailingUsageStat(combined[usage] || {}, 12, lastCompleteMonth).avg;
+      if (avgMonthlyKg <= 0.0001) {
+        avgMonthlyKg = queue.reduce((sum, item) => {
+          const months = monthsBetween(item.contract.start, item.contract.end).length || 1;
+          return sum + (item.contract.bags / months) * item.contract.weight;
+        }, 0);
+      }
+
+      const lastMonthKg = (combined[usage] && combined[usage][lastCompleteMonth]) || avgMonthlyKg;
+      const lastPrice = getLatestUsagePrice(usage);
+      const monthlyRate = avgMonthlyKg > 0.0001 ? avgMonthlyKg : lastMonthKg;
+      if (monthlyRate <= 0.0001 || lastPrice == null) return; // 予測に必要な情報が無い使用用途はスキップ
+
+      let cursor = currentMonthStr();
+      let qIdx = 0;
+      for (let m = 0; m < horizonMonths; m++) {
+        let remainingThisMonth = monthlyRate;
+        while (remainingThisMonth > 0.0001 && qIdx < queue.length) {
+          const item = queue[qIdx];
+          const take = Math.min(remainingThisMonth, item.remainingKg);
+          if (take > 0.0001) {
+            contribs.push({ month: cursor, supplier: item.contract.supplier || "(仕入先未設定)", price: item.contract.price, kg: take });
+            item.remainingKg -= take;
+            remainingThisMonth -= take;
+          }
+          if (item.remainingKg <= 0.001) qIdx++;
+        }
+        if (remainingThisMonth > 0.0001) {
+          contribs.push({ month: cursor, supplier: GAP_SUPPLIER_LABEL, price: lastPrice, kg: remainingThisMonth });
+        }
+        cursor = nextMonth(cursor);
+      }
+    });
+    return contribs;
+  }
+
+  function renderPaymentGap() {
+    const container = document.getElementById("payment-gap-groups");
+    const emptyEl = document.getElementById("payment-gap-empty");
+    if (!container) return;
+
+    const contribs = projectPaymentConsumptionWithGap(12);
+    const amountByMonthSupplier = {};
+    contribs.forEach(c => {
+      const amount = c.kg * c.price;
+      const payMonth = nextMonth(nextMonth(c.month));
+      if (!amountByMonthSupplier[payMonth]) amountByMonthSupplier[payMonth] = {};
+      amountByMonthSupplier[payMonth][c.supplier] = (amountByMonthSupplier[payMonth][c.supplier] || 0) + amount;
+    });
+
+    if (Object.keys(amountByMonthSupplier).length === 0) {
+      container.innerHTML = "";
+      emptyEl.style.display = "block";
+      return;
+    }
+    emptyEl.style.display = "none";
+    renderPaymentGroupTables(container, amountByMonthSupplier, [GAP_SUPPLIER_LABEL]);
   }
 
   function showUsageStats(usage, monthKg) {
@@ -1849,6 +1953,7 @@
     const openingRemainingRaw = document.getElementById("c-opening-remaining").value;
     const openingRemaining = openingRemainingRaw === "" ? null : Number(openingRemainingRaw);
     const earlyPickup = document.getElementById("c-early-pickup").checked;
+    const excludeFromForecast = document.getElementById("c-exclude-forecast").checked;
     const errEl = document.getElementById("c-error");
     if (!country || !product || !start || !end || !bags || !weight || !price) {
       errEl.textContent = "すべての項目を入力してください。";
@@ -1871,18 +1976,19 @@
     if (editingContractId !== null) {
       const idx = entries.findIndex(e => e.id === editingContractId);
       if (idx !== -1) {
-        entries[idx] = { id: editingContractId, kind: "contract", country, product, brand, supplier, contractNo, usage, start, end, bags, weight, price, openingRemaining, earlyPickup };
+        entries[idx] = { id: editingContractId, kind: "contract", country, product, brand, supplier, contractNo, usage, start, end, bags, weight, price, openingRemaining, earlyPickup, excludeFromForecast };
       }
       editingContractId = null;
       document.getElementById("c-add").textContent = "＋ 契約生豆を追加";
       document.getElementById("c-cancel-edit").style.display = "none";
       logChange(`契約生豆を編集: ${brand}(${monthLabel(start)}〜${monthLabel(end)})`);
     } else {
-      entries.push({ id: nextId++, kind: "contract", country, product, brand, supplier, contractNo, usage, start, end, bags, weight, price, openingRemaining, earlyPickup });
+      entries.push({ id: nextId++, kind: "contract", country, product, brand, supplier, contractNo, usage, start, end, bags, weight, price, openingRemaining, earlyPickup, excludeFromForecast });
       logChange(`契約生豆を追加: ${brand}(${monthLabel(start)}〜${monthLabel(end)})`);
     }
     document.getElementById("c-opening-remaining").value = "";
     document.getElementById("c-early-pickup").checked = false;
+    document.getElementById("c-exclude-forecast").checked = false;
     render();
   }
 
@@ -1902,6 +2008,7 @@
     document.getElementById("c-price").value = e.price;
     document.getElementById("c-opening-remaining").value = e.openingRemaining != null ? e.openingRemaining : "";
     document.getElementById("c-early-pickup").checked = !!e.earlyPickup;
+    document.getElementById("c-exclude-forecast").checked = !!e.excludeFromForecast;
     document.getElementById("c-error").textContent = "";
     document.getElementById("c-add").textContent = "変更を保存";
     document.getElementById("c-cancel-edit").style.display = "inline-flex";
@@ -1917,6 +2024,7 @@
       document.getElementById(id).value = "";
     });
     document.getElementById("c-early-pickup").checked = false;
+    document.getElementById("c-exclude-forecast").checked = false;
     document.getElementById("c-error").textContent = "";
     document.getElementById("c-add").textContent = "＋ 契約生豆を追加";
     document.getElementById("c-cancel-edit").style.display = "none";
@@ -2731,6 +2839,7 @@
     renderUsageHistory();
     renderForecast();
     renderPayment();
+    renderPaymentGap();
     renderHistory();
   }
 
@@ -2796,7 +2905,7 @@
       document.querySelectorAll(".tab-panel").forEach(panel => {
         panel.hidden = panel.dataset.tabPanel !== target;
       });
-      document.getElementById("entries-panel").hidden = target === "balance" || target === "arrival" || target === "matrix" || target === "roast" || target === "roast-matrix" || target === "usage-history" || target === "forecast" || target === "payment" || target === "history";
+      document.getElementById("entries-panel").hidden = target === "balance" || target === "arrival" || target === "matrix" || target === "roast" || target === "roast-matrix" || target === "usage-history" || target === "forecast" || target === "payment" || target === "payment-gap" || target === "history";
       if (target === "roast") renderComponentRows();
       if (target === "usage-history") {
         const wrap = document.getElementById("usage-matrix").closest(".table-wrap");
