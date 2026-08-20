@@ -924,7 +924,7 @@
 
     <div class="tab-panel" data-tab-panel="usage-history" hidden>
       <div style="padding:18px 22px 4px;"><h2>各月 使用用途別 生豆使用量 (kg・麻袋換算)</h2></div>
-      <p class="hint" style="padding:0 22px 10px;">使用用途ごとに、「入荷処理」タブで記録した実績を月別に集計して表示します(契約の理論上の残数配分は含みません)。「入荷処理」に未登録の月は、仕入システムからの実績集計値を斜体で参考表示します(セルにマウスを乗せるとどちらのデータか分かります)。kg数の下には生産国ごとの麻袋換算数量も表示します。左端の使用用途名をクリックすると、直近1年・半年・3ヶ月の使用量と月平均を表示します。</p>
+      <p class="hint" style="padding:0 22px 10px;">使用用途ごとに、「入荷処理」タブで記録した実績を月別に集計して表示します(契約の理論上の残数配分は含みません)。「入荷処理」に未登録の月は、仕入システムからの実績集計値を斜体で参考表示します(セルにマウスを乗せるとどちらのデータか分かります)。生産国ごとの麻袋換算数量をメインで表示し、下に小さくkg数も表示します。左端の使用用途名をクリックすると、直近1年・半年・3ヶ月の使用量と月平均を表示します。</p>
       <div id="uh-stats" class="uh-stats" hidden></div>
       <div class="table-wrap">
         <table class="matrix" id="usage-matrix"></table>
@@ -1277,13 +1277,13 @@
           const breakdown = Object.keys(cellData.byCountry)
             .sort((a, b) => cellData.byCountry[b] - cellData.byCountry[a])
             .map(country => `${country}: ${fmt(cellData.byCountry[country])}kg`).join(" / ");
-          cells += `<td class="cell${curCls}" title="${breakdown}(入荷処理実績)">${fmt(totalKg)}<span class="unit">kg</span><span class="sub">${fmt1(totalBags)}麻袋</span></td>`;
+          cells += `<td class="cell${curCls}" title="${breakdown}(入荷処理実績)">${fmt1(totalBags)}<span class="unit">麻袋</span><span class="sub">${fmt(totalKg)}kg</span></td>`;
         } else if (histKg != null) {
           combinedByUsage[usage][m] = histKg;
           const country = usageToCountry(usage);
           const bagWeight = BAG_WEIGHT_BY_COUNTRY[country] || 60;
           const bags = histKg / bagWeight;
-          cells += `<td class="cell historical${curCls}" title="仕入実績の集計値(入荷処理タブへの個別登録はまだありません)">${fmt(histKg)}<span class="unit">kg</span><span class="sub">${fmt1(bags)}麻袋</span></td>`;
+          cells += `<td class="cell historical${curCls}" title="仕入実績の集計値(入荷処理タブへの個別登録はまだありません)">${fmt1(bags)}<span class="unit">麻袋</span><span class="sub">${fmt(histKg)}kg</span></td>`;
         } else {
           cells += `<td class="cell empty-cell${curCls}">―</td>`;
         }
