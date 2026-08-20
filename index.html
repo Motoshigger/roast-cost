@@ -606,6 +606,7 @@
       <button class="tab-btn" data-tab="roast" role="tab" aria-selected="false">焙煎豆商品登録</button>
       <button class="tab-btn" data-tab="roast-matrix" role="tab" aria-selected="false">各月焙煎豆原価</button>
       <button class="tab-btn" data-tab="usage-history" role="tab" aria-selected="false">使用実績(使用用途別)</button>
+      <button class="tab-btn" data-tab="forecast" role="tab" aria-selected="false">在庫切れ予測</button>
       <button class="tab-btn" data-tab="history" role="tab" aria-selected="false">変更履歴</button>
     </div>
 
@@ -929,6 +930,26 @@
       <div class="table-wrap">
         <table class="matrix" id="usage-matrix"></table>
         <div class="empty" id="usage-matrix-empty" style="display:none;">「入荷処理」タブで入荷を記録すると、ここに月次の実績が表示されます。</div>
+      </div>
+    </div>
+
+    <div class="tab-panel" data-tab-panel="forecast" hidden>
+      <div style="padding:18px 22px 4px;"><h2>在庫切れ予測</h2></div>
+      <p class="hint" style="padding:0 22px 10px;">使用用途ごとの現在の契約残数(まだ使い切っていない契約の合計)を、直近1年間の平均使用量で割って、あと何ヶ月・何年何月頃に在庫が無くなりそうかを予測します。実績データが無い、または残数が無い使用用途は表示されません。在庫が無くなる予測が早い順に並びます。</p>
+      <div class="table-wrap">
+        <table class="entries-table" id="forecast-table">
+          <thead>
+            <tr>
+              <th>使用用途</th>
+              <th class="num">現在庫</th>
+              <th class="num">直近1年の月平均使用量</th>
+              <th class="num">残り期間</th>
+              <th>在庫切れ予測時期</th>
+            </tr>
+          </thead>
+          <tbody id="forecast-body"></tbody>
+        </table>
+        <div class="empty" id="forecast-empty" style="display:none;">契約残数・使用実績のデータが揃うと、ここに予測が表示されます。</div>
       </div>
     </div>
 
@@ -1309,16 +1330,100 @@
     }
   }
 
-  // 当月を含む直近N ヶ月分の使用量合計・月平均を計算する({monthKg}は { 月: kg })
-  function trailingUsageStat(monthKg, monthCount) {
-    const currentMonth = currentMonthStr();
-    let cursor = currentMonth;
+  // anchorMonthを含む直近N ヶ月分の使用量合計・月平均を計算する({monthKg}は { 月: kg })
+  function trailingUsageStat(monthKg, monthCount, anchorMonth) {
+    let cursor = anchorMonth || currentMonthStr();
     let total = 0;
     for (let i = 0; i < monthCount; i++) {
       total += monthKg[cursor] || 0;
       cursor = prevMonth(cursor);
     }
     return { total, avg: total / monthCount };
+  }
+
+  // 実績(入荷処理優先・無ければ仕入集計値)を使用用途ごとにまとめる({使用用途: {月: kg}})
+  function getCombinedUsageMonthlyKg() {
+    const detail = getUsageArrivalDetail();
+    const usages = new Set(uniqueUsages());
+    Object.keys(historicalUsageKg).forEach(u => usages.add(u));
+    const combined = {};
+    usages.forEach(usage => {
+      combined[usage] = {};
+      const monthsForUsage = new Set([
+        ...Object.keys(detail[usage] || {}),
+        ...Object.keys(historicalUsageKg[usage] || {})
+      ]);
+      monthsForUsage.forEach(m => {
+        const actual = detail[usage] && detail[usage][m];
+        if (actual) { combined[usage][m] = actual.totalKg; return; }
+        const hist = historicalUsageKg[usage] && historicalUsageKg[usage][m];
+        if (hist != null) combined[usage][m] = hist;
+      });
+    });
+    return combined;
+  }
+
+  // 使用用途ごとの現在の契約残数(kg)。まだ使い切っていない契約のみ合算する。
+  function getUsageRemainingKg() {
+    const remaining = {};
+    entries
+      .filter(e => e.kind === "contract" && e.usage && e.bags - usedBags(e) > 0.001)
+      .forEach(c => {
+        const kg = (c.bags - usedBags(c)) * c.weight;
+        remaining[c.usage] = (remaining[c.usage] || 0) + kg;
+      });
+    return remaining;
+  }
+
+  function renderForecast() {
+    const body = document.getElementById("forecast-body");
+    const emptyEl = document.getElementById("forecast-empty");
+    if (!body) return;
+    body.innerHTML = "";
+
+    const remainingByUsage = getUsageRemainingKg();
+    const combined = getCombinedUsageMonthlyKg();
+    const lastCompleteMonth = prevMonth(currentMonthStr());
+
+    const rows = Object.keys(remainingByUsage).map(usage => {
+      const remainingKg = remainingByUsage[usage];
+      const avgMonthlyKg = trailingUsageStat(combined[usage] || {}, 12, lastCompleteMonth).avg;
+      const bagWeight = BAG_WEIGHT_BY_COUNTRY[usageToCountry(usage)] || 60;
+      const monthsRemaining = avgMonthlyKg > 0.0001 ? remainingKg / avgMonthlyKg : null;
+      let runOutMonth = null;
+      if (monthsRemaining != null) {
+        let cursor = currentMonthStr();
+        for (let i = 0; i < Math.ceil(monthsRemaining); i++) cursor = nextMonth(cursor);
+        runOutMonth = cursor;
+      }
+      return { usage, remainingKg, bagWeight, avgMonthlyKg, monthsRemaining, runOutMonth };
+    }).sort((a, b) => {
+      if (a.monthsRemaining == null) return 1;
+      if (b.monthsRemaining == null) return -1;
+      return a.monthsRemaining - b.monthsRemaining;
+    });
+
+    emptyEl.style.display = rows.length === 0 ? "block" : "none";
+
+    body.innerHTML = rows.map(r => {
+      const remainingBags = r.remainingKg / r.bagWeight;
+      const periodText = r.monthsRemaining == null
+        ? "使用実績なし"
+        : r.monthsRemaining < 1
+          ? "1ヶ月未満"
+          : `約${fmt1(r.monthsRemaining)}ヶ月`;
+      const runOutText = r.runOutMonth ? monthLabel(r.runOutMonth) + "頃" : "―";
+      const urgentCls = r.monthsRemaining != null && r.monthsRemaining <= 3 ? " style=\"color:var(--danger);font-weight:600;\"" : "";
+      return `
+        <tr>
+          <td class="brand">${r.usage}</td>
+          <td class="num">${fmt1(remainingBags)}袋<span class="sub">${fmt(r.remainingKg)}kg</span></td>
+          <td class="num">${fmt1(r.avgMonthlyKg / r.bagWeight)}袋/月<span class="sub">${fmt1(r.avgMonthlyKg)}kg/月</span></td>
+          <td class="num"${urgentCls}>${periodText}</td>
+          <td${urgentCls}>${runOutText}</td>
+        </tr>
+      `;
+    }).join("");
   }
 
   function showUsageStats(usage, monthKg) {
@@ -2297,6 +2402,7 @@
     renderRoastProducts();
     renderRoastMatrix();
     renderUsageHistory();
+    renderForecast();
     renderHistory();
   }
 
@@ -2362,7 +2468,7 @@
       document.querySelectorAll(".tab-panel").forEach(panel => {
         panel.hidden = panel.dataset.tabPanel !== target;
       });
-      document.getElementById("entries-panel").hidden = target === "balance" || target === "arrival" || target === "matrix" || target === "roast" || target === "roast-matrix" || target === "usage-history" || target === "history";
+      document.getElementById("entries-panel").hidden = target === "balance" || target === "arrival" || target === "matrix" || target === "roast" || target === "roast-matrix" || target === "usage-history" || target === "forecast" || target === "history";
       if (target === "roast") renderComponentRows();
       if (target === "usage-history") {
         const wrap = document.getElementById("usage-matrix").closest(".table-wrap");
