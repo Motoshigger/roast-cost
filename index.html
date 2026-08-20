@@ -143,10 +143,19 @@
 
   .tabs {
     display: flex;
-    flex-wrap: wrap;
-    gap: 2px;
+    flex-direction: column;
     padding: 0 10px;
     border-bottom: 1px solid var(--line);
+  }
+
+  .tabs-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 2px;
+  }
+  .tabs-row:first-child {
+    border-bottom: 1px solid var(--line-soft);
   }
 
   .tab-btn {
@@ -631,23 +640,26 @@
 
   <div class="panel">
     <div class="tabs" role="tablist">
-      <span class="tab-group-label">入力</span>
-      <button class="tab-btn" data-tab="arrival" role="tab" aria-selected="false">契約仕入れ処理</button>
-      <button class="tab-btn" data-tab="spot" role="tab" aria-selected="false">現物仕入れ処理</button>
-      <button class="tab-btn active" data-tab="contract" role="tab" aria-selected="true">契約生豆を追加</button>
+      <div class="tabs-row">
+        <span class="tab-group-label">入力</span>
+        <button class="tab-btn" data-tab="arrival" role="tab" aria-selected="false">契約仕入れ処理</button>
+        <button class="tab-btn" data-tab="spot" role="tab" aria-selected="false">現物仕入れ処理</button>
+        <button class="tab-btn active" data-tab="contract" role="tab" aria-selected="true">契約生豆を追加</button>
 
-      <span class="tab-group-label">確認</span>
-      <button class="tab-btn" data-tab="matrix" role="tab" aria-selected="false">各月生豆原価</button>
-      <button class="tab-btn" data-tab="roast-matrix" role="tab" aria-selected="false">各月焙煎豆原価</button>
+        <span class="tab-group-label">契約管理</span>
+        <button class="tab-btn" data-tab="forecast" role="tab" aria-selected="false">在庫切れ予測</button>
+        <button class="tab-btn" data-tab="balance" role="tab" aria-selected="false">契約残数管理</button>
+        <button class="tab-btn" data-tab="usage-history" role="tab" aria-selected="false">使用実績(使用用途別)</button>
+      </div>
+      <div class="tabs-row">
+        <span class="tab-group-label">確認</span>
+        <button class="tab-btn" data-tab="matrix" role="tab" aria-selected="false">各月生豆原価</button>
+        <button class="tab-btn" data-tab="roast-matrix" role="tab" aria-selected="false">各月焙煎豆原価</button>
 
-      <span class="tab-group-label">契約管理</span>
-      <button class="tab-btn" data-tab="forecast" role="tab" aria-selected="false">在庫切れ予測</button>
-      <button class="tab-btn" data-tab="balance" role="tab" aria-selected="false">契約残数管理</button>
-      <button class="tab-btn" data-tab="usage-history" role="tab" aria-selected="false">使用実績(使用用途別)</button>
-
-      <span class="tab-group-label muted">その他</span>
-      <button class="tab-btn tab-btn-muted" data-tab="roast" role="tab" aria-selected="false">焙煎豆商品登録</button>
-      <button class="tab-btn tab-btn-muted" data-tab="history" role="tab" aria-selected="false">変更履歴</button>
+        <span class="tab-group-label muted">その他</span>
+        <button class="tab-btn tab-btn-muted" data-tab="roast" role="tab" aria-selected="false">焙煎豆商品登録</button>
+        <button class="tab-btn tab-btn-muted" data-tab="history" role="tab" aria-selected="false">変更履歴</button>
+      </div>
     </div>
 
     <div class="tab-panel form-panel" data-tab-panel="contract">
