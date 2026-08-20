@@ -423,6 +423,20 @@
     box-shadow: 1px 0 0 var(--line-soft);
   }
 
+  .matrix th.usage-first-col,
+  .matrix td.usage-first-col {
+    position: sticky;
+    left: 0;
+    z-index: 2;
+    background: var(--surface);
+    width: 170px;
+    min-width: 170px;
+    max-width: 170px;
+    white-space: normal;
+    font-weight: 600;
+    box-shadow: 1px 0 0 var(--line-soft);
+  }
+
   .matrix td.cell {
     text-align: right;
     font-variant-numeric: tabular-nums;
@@ -1150,7 +1164,7 @@
 
     const thead = document.createElement("thead");
     const headRow = document.createElement("tr");
-    headRow.innerHTML = `<th class="usage-col">使用用途</th>` + months.map(m => {
+    headRow.innerHTML = `<th class="usage-first-col">使用用途</th>` + months.map(m => {
       const isCurrent = m === currentMonth;
       return `<th class="num${isCurrent ? " current-month" : ""}">${monthLabel(m)}${isCurrent ? `<span class="sub">今月</span>` : ""}</th>`;
     }).join("");
@@ -1160,7 +1174,7 @@
     const tbody = document.createElement("tbody");
     usages.forEach(usage => {
       const tr = document.createElement("tr");
-      let cells = `<td class="usage-col">${usage}</td>`;
+      let cells = `<td class="usage-first-col">${usage}</td>`;
       months.forEach(m => {
         const byBrand = detail[usage] && detail[usage][m];
         const curCls = m === currentMonth ? " current-month" : "";
