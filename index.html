@@ -1236,7 +1236,7 @@
     const monthSet = new Set();
     Object.values(detail).forEach(byMonth => Object.keys(byMonth).forEach(m => monthSet.add(m)));
     Object.values(historicalUsageKg).forEach(byMonth => Object.keys(byMonth).forEach(m => monthSet.add(m)));
-    const months = orderMonthsCurrentFirst([...monthSet]);
+    const months = [...monthSet].sort(); // 古い月→新しい月の順(当月が一番右)
 
     if (usageList.length === 0 || months.length === 0) {
       emptyEl.style.display = "block";
@@ -1318,14 +1318,15 @@
   function showUsageStats(usage, monthKg) {
     const panel = document.getElementById("uh-stats");
     if (!panel) return;
+    const bagWeight = BAG_WEIGHT_BY_COUNTRY[usageToCountry(usage)] || 60;
     const y1 = trailingUsageStat(monthKg, 12);
     const m6 = trailingUsageStat(monthKg, 6);
     const m3 = trailingUsageStat(monthKg, 3);
     const block = (label, stat) => `
       <div class="uh-stat-block">
         <span class="uh-stat-label">${label}</span>
-        <span class="uh-stat-value">${fmt(stat.total)} kg</span>
-        <span class="uh-stat-avg">月平均 ${fmt1(stat.avg)} kg/月</span>
+        <span class="uh-stat-value">${fmt1(stat.total / bagWeight)} 麻袋</span>
+        <span class="uh-stat-avg">月平均 ${fmt1(stat.avg / bagWeight)} 麻袋/月　(${fmt(stat.total)}kg・月平均${fmt1(stat.avg)}kg)</span>
       </div>
     `;
     panel.innerHTML = `<span class="uh-stat-title">${usage}(当月を含む直近実績)</span>` +
