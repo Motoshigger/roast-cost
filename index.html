@@ -612,6 +612,20 @@
     font-weight: 600;
   }
 
+  .entries-table th.current-month,
+  .entries-table td.current-month {
+    border-left: 2px solid var(--money);
+    border-right: 2px solid var(--money);
+  }
+  .entries-table td.current-month {
+    color: var(--money);
+    font-weight: 700;
+  }
+  .entries-table td.current-month .sub {
+    color: var(--money);
+    font-weight: 600;
+  }
+
   .legend {
     display: flex;
     align-items: center;
@@ -1056,21 +1070,9 @@
 
     <div class="tab-panel" data-tab-panel="payment" hidden>
       <div style="padding:18px 22px 4px;"><h2>支払い管理(予測)</h2></div>
-      <p class="hint" style="padding:0 22px 10px;">実際の入荷処理の記録を待たず、現在の契約残数と使用実績(直近1年平均のペース)から「今後どの契約がいつ消化されるか」を予測し、仕入先ごとの支払い条件をあてはめて、何月にいくら支払いが発生しそうかを一覧表示します。同じ使用用途に複数の契約がある場合は、契約終了月が早いものから使う想定です。対象: MCAA・ワタル・日本珈琲貿易・石光商事(20日締め翌々月15日払い)、ボルカフェ(月末締め翌々月末払い)。支払い条件が未設定の仕入先はグレー表示になります(教えてもらえれば追加します)。</p>
-      <div class="table-wrap">
-        <table class="entries-table" id="payment-table">
-          <thead>
-            <tr>
-              <th style="width:130px;">支払予定日</th>
-              <th>仕入先</th>
-              <th>対象(使用予測月)</th>
-              <th class="num">予測金額</th>
-            </tr>
-          </thead>
-          <tbody id="payment-body"></tbody>
-        </table>
-        <div class="empty" id="payment-empty" style="display:none;">契約残数・使用実績のデータが揃うと、ここに支払い予測が表示されます。</div>
-      </div>
+      <p class="hint" style="padding:0 22px 10px;">実際の入荷処理の記録を待たず、現在の契約残数と使用実績(直近1年平均のペース)から「今後どの契約がいつ消化されるか」を予測し、仕入先ごとの支払い条件をあてはめて、何月にいくら支払いが発生しそうかを支払い条件のグループごとに表で表示します。同じ使用用途に複数の契約がある場合は、契約終了月が早いものから使う想定です。</p>
+      <div id="payment-groups"></div>
+      <div class="empty" id="payment-empty" style="display:none; margin:0 22px;">契約残数・使用実績のデータが揃うと、ここに支払い予測が表示されます。</div>
     </div>
 
     <div class="tab-panel" data-tab-panel="history" hidden>
@@ -1667,43 +1669,70 @@
   }
 
   function renderPayment() {
-    const body = document.getElementById("payment-body");
+    const container = document.getElementById("payment-groups");
     const emptyEl = document.getElementById("payment-empty");
-    if (!body) return;
-    body.innerHTML = "";
+    if (!container) return;
+    container.innerHTML = "";
 
     const contribs = projectPaymentConsumption();
 
-    const groups = {}; // key: payMonth|supplier -> { payMonth, payDateLabel, supplier, amount, months:Set, knownTerms }
+    // (支払月, 仕入先)ごとに金額を合算
+    const amountByMonthSupplier = {}; // { payMonth: { supplier: amount } }
     contribs.forEach(c => {
       const amount = c.kg * c.price;
-      const terms = PAYMENT_TERMS[c.supplier];
       const payMonth = nextMonth(nextMonth(c.month));
-      const payDateLabel = terms ? `${monthLabel(payMonth)}${terms.payDay}` : `${monthLabel(payMonth)}(支払条件未設定)`;
-      const key = payMonth + "|" + c.supplier;
-      if (!groups[key]) groups[key] = { payMonth, payDateLabel, supplier: c.supplier, amount: 0, months: new Set(), knownTerms: !!terms };
-      groups[key].amount += amount;
-      groups[key].months.add(c.month);
+      if (!amountByMonthSupplier[payMonth]) amountByMonthSupplier[payMonth] = {};
+      amountByMonthSupplier[payMonth][c.supplier] = (amountByMonthSupplier[payMonth][c.supplier] || 0) + amount;
     });
 
-    const rows = Object.values(groups).sort((a, b) =>
-      a.payMonth.localeCompare(b.payMonth) || a.supplier.localeCompare(b.supplier, "ja")
-    );
+    if (Object.keys(amountByMonthSupplier).length === 0) {
+      emptyEl.style.display = "block";
+      return;
+    }
+    emptyEl.style.display = "none";
 
-    emptyEl.style.display = rows.length === 0 ? "block" : "none";
+    // 支払い条件のグループを作る(20日締め翌々月15日払い / 月末締め翌々月末払い / 条件未設定)
+    const cutoffSuppliers = Object.keys(PAYMENT_TERMS).filter(s => PAYMENT_TERMS[s].type === "cutoff20");
+    const monthendSuppliers = Object.keys(PAYMENT_TERMS).filter(s => PAYMENT_TERMS[s].type === "monthend");
+    const knownSuppliers = new Set([...cutoffSuppliers, ...monthendSuppliers]);
+    const unknownSuppliers = [...new Set(contribs.map(c => c.supplier))].filter(s => !knownSuppliers.has(s)).sort((a, b) => a.localeCompare(b, "ja"));
 
-    body.innerHTML = rows.map(r => {
-      const monthsText = [...r.months].sort().map(m => monthLabel(m)).join("・");
-      const warnCls = r.knownTerms ? "" : " style=\"color:var(--ink-faint);\"";
-      return `
-        <tr${warnCls}>
-          <td>${r.payDateLabel}</td>
-          <td class="brand">${r.supplier}</td>
-          <td class="wrap">${monthsText}使用予測分</td>
-          <td class="num">¥${fmt(r.amount)}</td>
-        </tr>
+    const groupDefs = [
+      { title: "20日締め翌々月15日払い", suppliers: cutoffSuppliers },
+      { title: "月末締め翌々月末払い", suppliers: monthendSuppliers },
+      { title: "支払い条件が未設定の仕入先(教えてもらえれば条件を追加します)", suppliers: unknownSuppliers }
+    ].filter(g => g.suppliers.length > 0);
+
+    const currentMonth = currentMonthStr();
+
+    groupDefs.forEach(group => {
+      const monthsInGroup = Object.keys(amountByMonthSupplier)
+        .filter(m => group.suppliers.some(s => amountByMonthSupplier[m][s]))
+        .sort();
+      if (monthsInGroup.length === 0) return;
+
+      const headCells = `<th>支払月</th>` + group.suppliers.map(s => `<th class="num">${s}</th>`).join("") + `<th class="num">合計</th>`;
+      const bodyRows = monthsInGroup.map(m => {
+        const rowVals = group.suppliers.map(s => amountByMonthSupplier[m][s] || 0);
+        const rowTotal = rowVals.reduce((a, b) => a + b, 0);
+        const isCurrent = m === currentMonth;
+        const cells = rowVals.map(v => `<td class="num${isCurrent ? " current-month" : ""}">${v > 0 ? "¥" + fmt(v) : "―"}</td>`).join("");
+        return `<tr><td${isCurrent ? ' class="current-month"' : ""}>${monthLabel(m)}${isCurrent ? '<span class="sub">今月</span>' : ""}</td>${cells}<td class="num" style="font-weight:600;">¥${fmt(rowTotal)}</td></tr>`;
+      }).join("");
+
+      const section = document.createElement("div");
+      section.style.marginBottom = "24px";
+      section.innerHTML = `
+        <div style="padding:6px 22px;"><h3 style="margin:0; font-size:13px;">${group.title}</h3></div>
+        <div class="table-wrap">
+          <table class="entries-table">
+            <thead><tr>${headCells}</tr></thead>
+            <tbody>${bodyRows}</tbody>
+          </table>
+        </div>
       `;
-    }).join("");
+      container.appendChild(section);
+    });
   }
 
   function showUsageStats(usage, monthKg) {
