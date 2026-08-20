@@ -1803,10 +1803,13 @@
 
       let avgMonthlyKg = trailingUsageStat(combined[usage] || {}, 12, lastCompleteMonth).avg;
       if (avgMonthlyKg <= 0.0001) {
-        avgMonthlyKg = queue.reduce((sum, item) => {
-          const months = monthsBetween(item.contract.start, item.contract.end).length || 1;
-          return sum + (item.contract.bags / months) * item.contract.weight;
-        }, 0);
+        // 大口スポット発注は名目ペースが実態よりかなり大きくなりがちなので、この代用計算からは除く
+        avgMonthlyKg = queue
+          .filter(item => !item.contract.excludeFromForecast)
+          .reduce((sum, item) => {
+            const months = monthsBetween(item.contract.start, item.contract.end).length || 1;
+            return sum + (item.contract.bags / months) * item.contract.weight;
+          }, 0);
       }
 
       const lastMonthKg = (combined[usage] && combined[usage][lastCompleteMonth]) || avgMonthlyKg;
