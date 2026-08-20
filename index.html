@@ -1082,7 +1082,7 @@
 
     <div class="tab-panel" data-tab-panel="payment-gap" hidden>
       <div style="padding:18px 22px 4px;"><h2>支払い管理(未契約分含む予測)</h2></div>
-      <p class="hint" style="padding:0 22px 10px;">既に契約が埋まっている期間はその契約の数量・単価をそのまま使い、契約で埋まっていない期間(在庫が尽きた後)は、前月の使用実績の数量と単価をそのまま当てはめて「まだ契約していない発注分」も含めて支払い予測を行います。仕入先が未定のため、契約が埋まっていない分は便宜上すべて「未定(20日締め翌々月15日払い想定)」として扱います。契約登録画面で「大口スポット発注」にチェックした契約は、この未契約分予測の計算からは除外されます(在庫切れの判定が実態より遅く出るのを防ぐためです)。</p>
+      <p class="hint" style="padding:0 22px 10px;">既に契約が埋まっている期間はその契約の数量・単価をそのまま使い、契約で埋まっていない期間(在庫が尽きた後)は、前月の使用実績の数量と単価をそのまま当てはめて「まだ契約していない発注分」も含めて支払い予測を行います。仕入先が未定のため、契約が埋まっていない分は便宜上すべて「未定(20日締め翌々月15日払い想定)」として扱います。契約登録画面で「大口スポット発注」にチェックした契約は、在庫がいつ尽きるかの計算には(実際の残数として)含めたうえで、その契約自体の金額はこの表には表示しません。</p>
       <div id="payment-gap-groups"></div>
       <div class="empty" id="payment-gap-empty" style="display:none; margin:0 22px;">契約残数・使用実績のデータが揃うと、ここに支払い予測が表示されます。</div>
     </div>
@@ -1793,8 +1793,11 @@
 
     const contribs = [];
     usages.forEach(usage => {
+      // 在庫が実際にいつ尽きるかの判定には、大口スポット発注も含めた全ての契約残数を使う
+      // (除外契約の在庫が実際にはまだあるのに「在庫切れ」と誤判定してしまうのを防ぐため)。
+      // 一方、除外にチェックした契約自体の金額は、この「未契約分含む予測」の集計には出さない。
       const queue = entries
-        .filter(e => e.kind === "contract" && e.usage === usage && !e.excludeFromForecast && e.bags - usedBags(e) > 0.001)
+        .filter(e => e.kind === "contract" && e.usage === usage && e.bags - usedBags(e) > 0.001)
         .sort((a, b) => a.end.localeCompare(b.end))
         .map(c => ({ contract: c, remainingKg: (c.bags - usedBags(c)) * c.weight }));
 
@@ -1819,7 +1822,9 @@
           const item = queue[qIdx];
           const take = Math.min(remainingThisMonth, item.remainingKg);
           if (take > 0.0001) {
-            contribs.push({ month: cursor, supplier: item.contract.supplier || "(仕入先未設定)", price: item.contract.price, kg: take });
+            if (!item.contract.excludeFromForecast) {
+              contribs.push({ month: cursor, supplier: item.contract.supplier || "(仕入先未設定)", price: item.contract.price, kg: take });
+            }
             item.remainingKg -= take;
             remainingThisMonth -= take;
           }
