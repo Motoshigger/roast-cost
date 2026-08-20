@@ -702,6 +702,7 @@
         <span class="tab-group-label">確認</span>
         <button class="tab-btn" data-tab="matrix" role="tab" aria-selected="false">各月生豆原価</button>
         <button class="tab-btn" data-tab="roast-matrix" role="tab" aria-selected="false">各月焙煎豆原価</button>
+        <button class="tab-btn" data-tab="payment" role="tab" aria-selected="false">支払い管理</button>
 
         <span class="tab-group-label muted">その他</span>
         <button class="tab-btn tab-btn-muted" data-tab="roast" role="tab" aria-selected="false">焙煎豆商品登録</button>
@@ -1050,6 +1051,25 @@
           <tbody id="forecast-body"></tbody>
         </table>
         <div class="empty" id="forecast-empty" style="display:none;">契約残数・使用実績のデータが揃うと、ここに予測が表示されます。</div>
+      </div>
+    </div>
+
+    <div class="tab-panel" data-tab-panel="payment" hidden>
+      <div style="padding:18px 22px 4px;"><h2>支払い管理</h2></div>
+      <p class="hint" style="padding:0 22px 10px;">「契約仕入れ処理」タブで記録した入荷実績を、仕入先ごとの支払い条件に基づいて支払月ごとに集計します。対象: MCAA・ワタル・日本珈琲貿易・石光商事(20日締め翌々月15日払い)、ボルカフェ(月末締め翌々月末払い)。支払い条件が設定されていない仕入先の分は、一番下に別枠で表示します。</p>
+      <div class="table-wrap">
+        <table class="entries-table" id="payment-table">
+          <thead>
+            <tr>
+              <th style="width:130px;">支払予定日</th>
+              <th>仕入先</th>
+              <th>対象仕入(入荷日)</th>
+              <th class="num">金額</th>
+            </tr>
+          </thead>
+          <tbody id="payment-body"></tbody>
+        </table>
+        <div class="empty" id="payment-empty" style="display:none;">「契約仕入れ処理」タブで入荷を記録すると、ここに支払い予定が表示されます。</div>
       </div>
     </div>
 
@@ -1589,6 +1609,125 @@
         </tr>
       `;
     }).join("");
+  }
+
+  // ==================== 支払い管理 ====================
+  // 20日締め翌々月15日払いの仕入先、月末締め翌々月末払いの仕入先をそれぞれ設定する
+  const PAYMENT_TERMS = {
+    "MCAA": { type: "cutoff20", payMonthOffset: 2, payDay: 15 },
+    "ワタル": { type: "cutoff20", payMonthOffset: 2, payDay: 15 },
+    "日本珈琲貿易": { type: "cutoff20", payMonthOffset: 2, payDay: 15 },
+    "石光商事": { type: "cutoff20", payMonthOffset: 2, payDay: 15 },
+    "ボルカフェ": { type: "monthend", payMonthOffset: 2 }
+  };
+
+  // 入荷日と仕入先の支払い条件から、支払月・支払日ラベルを計算する
+  function computePaymentSchedule(dateStr, supplier) {
+    const terms = PAYMENT_TERMS[supplier];
+    if (!terms) return null;
+    const day = Number(dateStr.slice(8, 10));
+    const ym = dateStr.slice(0, 7);
+
+    let payMonth;
+    let payDateLabel;
+    if (terms.type === "cutoff20") {
+      const cutoffMonth = day <= 20 ? ym : nextMonth(ym);
+      payMonth = cutoffMonth;
+      for (let i = 0; i < terms.payMonthOffset; i++) payMonth = nextMonth(payMonth);
+      payDateLabel = `${monthLabel(payMonth)}15日`;
+    } else {
+      payMonth = ym;
+      for (let i = 0; i < terms.payMonthOffset; i++) payMonth = nextMonth(payMonth);
+      payDateLabel = `${monthLabel(payMonth)}末`;
+    }
+    return { payMonth, payDateLabel };
+  }
+
+  function renderPayment() {
+    const body = document.getElementById("payment-body");
+    const emptyEl = document.getElementById("payment-empty");
+    if (!body) return;
+    body.innerHTML = "";
+
+    const rows = [];
+    const unknownSupplierRows = [];
+
+    arrivals.forEach(a => {
+      const contract = entries.find(e => e.id === a.contractId && e.kind === "contract");
+      if (!contract) return;
+      const amount = a.bags * contract.weight * contract.price;
+      const schedule = computePaymentSchedule(a.date, contract.supplier);
+      const row = {
+        supplier: contract.supplier || "(仕入先未設定)",
+        date: a.date,
+        amount
+      };
+      if (schedule) {
+        rows.push({ ...row, payMonth: schedule.payMonth, payDateLabel: schedule.payDateLabel });
+      } else {
+        unknownSupplierRows.push(row);
+      }
+    });
+
+    rows.sort((a, b) => a.payMonth.localeCompare(b.payMonth) || a.supplier.localeCompare(b.supplier, "ja") || a.date.localeCompare(b.date));
+
+    emptyEl.style.display = (rows.length === 0 && unknownSupplierRows.length === 0) ? "block" : "none";
+
+    let html = "";
+    let currentGroup = null;
+    let groupAmount = 0;
+    let groupDates = [];
+
+    const flushGroup = () => {
+      if (!currentGroup) return;
+      html += `
+        <tr>
+          <td>${currentGroup.payDateLabel}</td>
+          <td class="brand">${currentGroup.supplier}</td>
+          <td class="wrap">${groupDates.join("・")}</td>
+          <td class="num">¥${fmt(groupAmount)}</td>
+        </tr>
+      `;
+    };
+
+    rows.forEach(r => {
+      const groupKey = r.payMonth + "|" + r.supplier;
+      if (!currentGroup || currentGroup.key !== groupKey) {
+        flushGroup();
+        currentGroup = { key: groupKey, payDateLabel: r.payDateLabel, supplier: r.supplier };
+        groupAmount = 0;
+        groupDates = [];
+      }
+      groupAmount += r.amount;
+      groupDates.push(r.date);
+    });
+    flushGroup();
+
+    if (unknownSupplierRows.length > 0) {
+      const totalUnknown = unknownSupplierRows.reduce((s, r) => s + r.amount, 0);
+      const bySupplier = {};
+      unknownSupplierRows.forEach(r => {
+        if (!bySupplier[r.supplier]) bySupplier[r.supplier] = 0;
+        bySupplier[r.supplier] += r.amount;
+      });
+      html += `
+        <tr style="border-top:2px solid var(--line);">
+          <td colspan="4" style="padding-top:14px; color:var(--ink-soft); font-size:11px;">支払い条件が未設定の仕入先(合計 ¥${fmt(totalUnknown)})。設定が必要であれば教えてください。</td>
+        </tr>
+      `;
+      Object.keys(bySupplier).forEach(supplier => {
+        html += `
+          <tr>
+            <td>―</td>
+            <td class="brand">${supplier}</td>
+            <td class="wrap">―</td>
+            <td class="num">¥${fmt(bySupplier[supplier])}</td>
+          </tr>
+        `;
+      });
+    }
+
+    body.innerHTML = html;
   }
 
   function showUsageStats(usage, monthKg) {
@@ -2568,6 +2707,7 @@
     renderRoastMatrix();
     renderUsageHistory();
     renderForecast();
+    renderPayment();
     renderHistory();
   }
 
@@ -2633,7 +2773,7 @@
       document.querySelectorAll(".tab-panel").forEach(panel => {
         panel.hidden = panel.dataset.tabPanel !== target;
       });
-      document.getElementById("entries-panel").hidden = target === "balance" || target === "arrival" || target === "matrix" || target === "roast" || target === "roast-matrix" || target === "usage-history" || target === "forecast" || target === "history";
+      document.getElementById("entries-panel").hidden = target === "balance" || target === "arrival" || target === "matrix" || target === "roast" || target === "roast-matrix" || target === "usage-history" || target === "forecast" || target === "payment" || target === "history";
       if (target === "roast") renderComponentRows();
       if (target === "usage-history") {
         const wrap = document.getElementById("usage-matrix").closest(".table-wrap");
