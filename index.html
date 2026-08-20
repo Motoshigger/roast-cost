@@ -644,11 +644,11 @@
           <input type="number" id="s-price" min="0" step="1" placeholder="1050">
         </div>
         <div class="field span2">
-          <label for="s-qty">数量 (kg・任意)</label>
-          <input type="number" id="s-qty" min="0" step="0.1" placeholder="未入力可(平均計算時は等分として扱います)">
+          <label for="s-qty">数量 (kg)</label>
+          <input type="number" id="s-qty" min="0" step="0.1" placeholder="例: 60">
         </div>
         <div class="field span2">
-          <label for="s-usage">使用用途 (任意)</label>
+          <label for="s-usage">使用用途</label>
           <input type="text" id="s-usage" placeholder="例: シングルオリジン販売用">
         </div>
       </div>
@@ -1390,6 +1390,14 @@
     }
     if (!/^\d{4}-\d{2}$/.test(month)) {
       errEl.textContent = "対象月はYYYYMMの形式で入力してください(例: 202608)。";
+      return;
+    }
+    if (qty === null || qty <= 0) {
+      errEl.textContent = "数量(kg)を入力してください。";
+      return;
+    }
+    if (!usage) {
+      errEl.textContent = "使用用途を入力してください。";
       return;
     }
     errEl.textContent = "";
