@@ -540,6 +540,7 @@
       <button class="tab-btn" data-tab="matrix" role="tab" aria-selected="false">各月生豆原価</button>
       <button class="tab-btn" data-tab="roast" role="tab" aria-selected="false">焙煎豆商品登録</button>
       <button class="tab-btn" data-tab="roast-matrix" role="tab" aria-selected="false">各月焙煎豆原価</button>
+      <button class="tab-btn" data-tab="history" role="tab" aria-selected="false">変更履歴</button>
     </div>
 
     <div class="tab-panel form-panel" data-tab-panel="contract">
@@ -854,6 +855,20 @@
         <div class="empty" id="roast-matrix-empty" style="display:none;">焙煎豆商品を登録すると、ここに月次原価が表示されます。</div>
       </div>
     </div>
+
+    <div class="tab-panel" data-tab-panel="history" hidden>
+      <div style="padding:18px 22px 4px;"><h2>変更履歴</h2></div>
+      <p class="hint" style="padding:0 22px 10px;">追加・編集・削除の操作履歴を新しい順に表示します(最新300件まで保持)。</p>
+      <div class="table-wrap">
+        <table class="entries-table">
+          <thead>
+            <tr><th style="width:140px;">日時</th><th style="width:220px;">操作者</th><th>内容</th></tr>
+          </thead>
+          <tbody id="history-body"></tbody>
+        </table>
+        <div class="empty" id="history-empty" style="display:none;">まだ変更履歴がありません。</div>
+      </div>
+    </div>
   </div>
 
   <div class="panel" id="entries-panel">
@@ -906,6 +921,7 @@
   let draftComponents = [];
   let editingRoastId = null;
   let editingContractId = null;
+  let changeLog = [];
 
   function fmt(n) {
     if (!isFinite(n)) return "—";
@@ -1184,8 +1200,10 @@
       editingContractId = null;
       document.getElementById("c-add").textContent = "＋ 契約生豆を追加";
       document.getElementById("c-cancel-edit").style.display = "none";
+      logChange(`契約生豆を編集: ${brand}(${monthLabel(start)}〜${monthLabel(end)})`);
     } else {
       entries.push({ id: nextId++, kind: "contract", country, product, brand, supplier, contractNo, usage, start, end, bags, weight, price, openingRemaining, earlyPickup });
+      logChange(`契約生豆を追加: ${brand}(${monthLabel(start)}〜${monthLabel(end)})`);
     }
     document.getElementById("c-opening-remaining").value = "";
     document.getElementById("c-early-pickup").checked = false;
@@ -1248,6 +1266,7 @@
     errEl.textContent = "";
     const brand = `${country} ${product}`;
     entries.push({ id: nextId++, kind: "spot", country, product, brand, month, price, qty, usage });
+    logChange(`当月買いを追加: ${brand}(${monthLabel(month)})`);
     document.getElementById("s-country").value = "";
     document.getElementById("s-product").value = "";
     document.getElementById("s-price").value = "";
@@ -1257,8 +1276,12 @@
   }
 
   function removeEntry(id) {
+    const target = entries.find(e => e.id === id);
     entries = entries.filter(e => e.id !== id);
     arrivals = arrivals.filter(a => a.contractId !== id);
+    if (target) {
+      logChange(`${target.kind === "spot" ? "当月買い" : "契約生豆"}を削除: ${target.brand}`);
+    }
     render();
   }
 
@@ -1320,6 +1343,7 @@
     }
     errEl.textContent = "";
     arrivals.push({ id: nextArrivalId++, contractId, date, bags, recorder });
+    logChange(`入荷処理を追加: ${contract.brand}　${bags}袋(${date}、記録者:${recorder})`);
     document.getElementById("a-date").value = "";
     document.getElementById("a-bags").value = "";
     document.getElementById("a-recorder").value = "";
@@ -1327,7 +1351,12 @@
   }
 
   function removeArrival(id) {
+    const target = arrivals.find(a => a.id === id);
     arrivals = arrivals.filter(a => a.id !== id);
+    if (target) {
+      const contract = entries.find(e => e.id === target.contractId);
+      logChange(`入荷処理を削除: ${contract ? contract.brand : "(契約削除済み)"}　${target.bags}袋(${target.date})`);
+    }
     render();
   }
 
@@ -1758,8 +1787,10 @@
         roastedProducts[idx] = { id: editingRoastId, name, name2, type, roastLoss, components };
       }
       editingRoastId = null;
+      logChange(`焙煎豆商品を編集: ${name}`);
     } else {
       roastedProducts.push({ id: nextRoastId++, name, name2, type, roastLoss, components });
+      logChange(`焙煎豆商品を追加: ${name}`);
     }
     document.getElementById("r-name").value = "";
     document.getElementById("r-name2").value = "";
@@ -1813,7 +1844,11 @@
   }
 
   function removeRoastProduct(id) {
+    const target = roastedProducts.find(p => p.id === id);
     roastedProducts = roastedProducts.filter(p => p.id !== id);
+    if (target) {
+      logChange(`焙煎豆商品を削除: ${target.name}`);
+    }
     render();
   }
 
@@ -1939,7 +1974,7 @@
 
   function saveStateLocal() {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({ entries, arrivals, nextId, nextArrivalId, roastedProducts, nextRoastId }));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ entries, arrivals, nextId, nextArrivalId, roastedProducts, nextRoastId, changeLog }));
     } catch (e) { /* storage unavailable, ignore */ }
   }
 
@@ -1963,6 +1998,40 @@
     nextArrivalId = data.nextArrivalId || (Math.max(0, ...arrivals.map(a => a.id)) + 1);
     roastedProducts = data.roastedProducts || [];
     nextRoastId = data.nextRoastId || (Math.max(0, ...roastedProducts.map(p => p.id)) + 1);
+    changeLog = data.changeLog || [];
+  }
+
+  // 変更履歴に1件追記する(最新300件のみ保持)
+  function logChange(action) {
+    changeLog.push({
+      ts: Date.now(),
+      user: (auth.currentUser && auth.currentUser.email) || "不明",
+      action
+    });
+    if (changeLog.length > 300) {
+      changeLog = changeLog.slice(changeLog.length - 300);
+    }
+  }
+
+  function formatLogTime(ts) {
+    const d = new Date(ts);
+    const pad = n => String(n).padStart(2, "0");
+    return `${d.getFullYear()}/${pad(d.getMonth() + 1)}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  }
+
+  function renderHistory() {
+    const tbody = document.getElementById("history-body");
+    const emptyEl = document.getElementById("history-empty");
+    if (!tbody) return;
+    const rows = changeLog.slice().reverse();
+    emptyEl.style.display = rows.length === 0 ? "" : "none";
+    tbody.innerHTML = rows.map(h => `
+      <tr>
+        <td class="wrap">${formatLogTime(h.ts)}</td>
+        <td class="wrap">${h.user}</td>
+        <td class="wrap">${h.action}</td>
+      </tr>
+    `).join("");
   }
 
   function renderAll() {
@@ -1974,10 +2043,11 @@
     renderComponentRows();
     renderRoastProducts();
     renderRoastMatrix();
+    renderHistory();
   }
 
   function saveToFirestore() {
-    const state = { entries, arrivals, nextId, nextArrivalId, roastedProducts, nextRoastId };
+    const state = { entries, arrivals, nextId, nextArrivalId, roastedProducts, nextRoastId, changeLog };
     ledgerDocRef.set(state).then(() => {
       setSyncStatus("");
     }).catch(err => {
@@ -2038,7 +2108,7 @@
       document.querySelectorAll(".tab-panel").forEach(panel => {
         panel.hidden = panel.dataset.tabPanel !== target;
       });
-      document.getElementById("entries-panel").hidden = target === "balance" || target === "arrival" || target === "matrix" || target === "roast" || target === "roast-matrix";
+      document.getElementById("entries-panel").hidden = target === "balance" || target === "arrival" || target === "matrix" || target === "roast" || target === "roast-matrix" || target === "history";
       if (target === "roast") renderComponentRows();
       renderEntries();
     });
