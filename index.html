@@ -1643,7 +1643,14 @@
     usages.forEach(usage => {
       const queue = getUsageActiveContractQueue(usage);
       if (queue.length === 0) return;
-      const avgMonthlyKg = trailingUsageStat(combined[usage] || {}, 12, lastCompleteMonth).avg;
+      let avgMonthlyKg = trailingUsageStat(combined[usage] || {}, 12, lastCompleteMonth).avg;
+      if (avgMonthlyKg <= 0.0001) {
+        // まだ使用実績(入荷処理・仕入集計値)が無い使用用途は、契約自体の契約期間ベースの名目消費ペースを合計して代用する
+        avgMonthlyKg = queue.reduce((sum, item) => {
+          const months = monthsBetween(item.contract.start, item.contract.end).length || 1;
+          return sum + (item.contract.bags / months) * item.contract.weight;
+        }, 0);
+      }
       if (avgMonthlyKg <= 0.0001) return;
 
       let cursor = currentMonthStr();
