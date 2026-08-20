@@ -1731,6 +1731,13 @@
         return `<tr><td class="brand">${s}</td>${cells}</tr>`;
       }).join("");
 
+      const totalCells = monthsInGroup.map(m => {
+        const total = group.suppliers.reduce((sum, s) => sum + (amountByMonthSupplier[m][s] || 0), 0);
+        const isCurrent = m === currentMonth;
+        return `<td class="num${isCurrent ? " current-month" : ""}" style="font-weight:600;">¥${fmt(total)}</td>`;
+      }).join("");
+      const totalRow = `<tr style="border-top:2px solid var(--line);"><td class="brand" style="font-weight:600;">合計</td>${totalCells}</tr>`;
+
       const section = document.createElement("div");
       section.style.marginBottom = "24px";
       section.innerHTML = `
@@ -1738,7 +1745,7 @@
         <div class="table-wrap">
           <table class="entries-table">
             <thead><tr>${headCells}</tr></thead>
-            <tbody>${bodyRows}</tbody>
+            <tbody>${bodyRows}${totalRow}</tbody>
           </table>
         </div>
       `;
