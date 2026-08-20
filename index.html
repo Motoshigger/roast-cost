@@ -1055,21 +1055,21 @@
     </div>
 
     <div class="tab-panel" data-tab-panel="payment" hidden>
-      <div style="padding:18px 22px 4px;"><h2>支払い管理</h2></div>
-      <p class="hint" style="padding:0 22px 10px;">「契約仕入れ処理」タブで記録した入荷実績を、仕入先ごとの支払い条件に基づいて支払月ごとに集計します。対象: MCAA・ワタル・日本珈琲貿易・石光商事(20日締め翌々月15日払い)、ボルカフェ(月末締め翌々月末払い)。支払い条件が設定されていない仕入先の分は、一番下に別枠で表示します。</p>
+      <div style="padding:18px 22px 4px;"><h2>支払い管理(予測)</h2></div>
+      <p class="hint" style="padding:0 22px 10px;">実際の入荷処理の記録を待たず、現在の契約残数と使用実績(直近1年平均のペース)から「今後どの契約がいつ消化されるか」を予測し、仕入先ごとの支払い条件をあてはめて、何月にいくら支払いが発生しそうかを一覧表示します。同じ使用用途に複数の契約がある場合は、契約終了月が早いものから使う想定です。対象: MCAA・ワタル・日本珈琲貿易・石光商事(20日締め翌々月15日払い)、ボルカフェ(月末締め翌々月末払い)。支払い条件が未設定の仕入先はグレー表示になります(教えてもらえれば追加します)。</p>
       <div class="table-wrap">
         <table class="entries-table" id="payment-table">
           <thead>
             <tr>
               <th style="width:130px;">支払予定日</th>
               <th>仕入先</th>
-              <th>対象仕入(入荷日)</th>
-              <th class="num">金額</th>
+              <th>対象(使用予測月)</th>
+              <th class="num">予測金額</th>
             </tr>
           </thead>
           <tbody id="payment-body"></tbody>
         </table>
-        <div class="empty" id="payment-empty" style="display:none;">「契約仕入れ処理」タブで入荷を記録すると、ここに支払い予定が表示されます。</div>
+        <div class="empty" id="payment-empty" style="display:none;">契約残数・使用実績のデータが揃うと、ここに支払い予測が表示されます。</div>
       </div>
     </div>
 
@@ -1611,36 +1611,59 @@
     }).join("");
   }
 
-  // ==================== 支払い管理 ====================
-  // 20日締め翌々月15日払いの仕入先、月末締め翌々月末払いの仕入先をそれぞれ設定する
+  // ==================== 支払い管理(予測) ====================
+  // 20日締め翌々月15日払いの仕入先、月末締め翌々月末払いの仕入先をそれぞれ設定する(どちらも支払月は2ヶ月後)
   const PAYMENT_TERMS = {
-    "MCAA": { type: "cutoff20", payMonthOffset: 2, payDay: 15 },
-    "ワタル": { type: "cutoff20", payMonthOffset: 2, payDay: 15 },
-    "日本珈琲貿易": { type: "cutoff20", payMonthOffset: 2, payDay: 15 },
-    "石光商事": { type: "cutoff20", payMonthOffset: 2, payDay: 15 },
-    "ボルカフェ": { type: "monthend", payMonthOffset: 2 }
+    "MCAA": { type: "cutoff20", payDay: "15日" },
+    "ワタル": { type: "cutoff20", payDay: "15日" },
+    "日本珈琲貿易": { type: "cutoff20", payDay: "15日" },
+    "石光商事": { type: "cutoff20", payDay: "15日" },
+    "ボルカフェ": { type: "monthend", payDay: "末日" }
   };
 
-  // 入荷日と仕入先の支払い条件から、支払月・支払日ラベルを計算する
-  function computePaymentSchedule(dateStr, supplier) {
-    const terms = PAYMENT_TERMS[supplier];
-    if (!terms) return null;
-    const day = Number(dateStr.slice(8, 10));
-    const ym = dateStr.slice(0, 7);
+  // 使用用途ごとに、残数がある契約を契約終了月が早い順(先に使い切る順)に並べる
+  function getUsageActiveContractQueue(usage) {
+    return entries
+      .filter(e => e.kind === "contract" && e.usage === usage && e.bags - usedBags(e) > 0.001)
+      .sort((a, b) => a.end.localeCompare(b.end))
+      .map(c => ({ contract: c, remainingKg: (c.bags - usedBags(c)) * c.weight }));
+  }
 
-    let payMonth;
-    let payDateLabel;
-    if (terms.type === "cutoff20") {
-      const cutoffMonth = day <= 20 ? ym : nextMonth(ym);
-      payMonth = cutoffMonth;
-      for (let i = 0; i < terms.payMonthOffset; i++) payMonth = nextMonth(payMonth);
-      payDateLabel = `${monthLabel(payMonth)}15日`;
-    } else {
-      payMonth = ym;
-      for (let i = 0; i < terms.payMonthOffset; i++) payMonth = nextMonth(payMonth);
-      payDateLabel = `${monthLabel(payMonth)}末`;
-    }
-    return { payMonth, payDateLabel };
+  // 使用実績(直近1年平均)のペースで、現在の契約残数を今月以降どの契約からどれだけ消化していくかを予測する
+  // 戻り値: [{ month, supplier, price, kg }]
+  function projectPaymentConsumption() {
+    const combined = getCombinedUsageMonthlyKg();
+    const lastCompleteMonth = prevMonth(currentMonthStr());
+    const usages = new Set(uniqueUsages());
+    Object.keys(historicalUsageKg).forEach(u => usages.add(u));
+
+    const contribs = [];
+    usages.forEach(usage => {
+      const queue = getUsageActiveContractQueue(usage);
+      if (queue.length === 0) return;
+      const avgMonthlyKg = trailingUsageStat(combined[usage] || {}, 12, lastCompleteMonth).avg;
+      if (avgMonthlyKg <= 0.0001) return;
+
+      let cursor = currentMonthStr();
+      let qIdx = 0;
+      let guard = 0;
+      while (qIdx < queue.length && guard < 240) {
+        let remainingThisMonth = avgMonthlyKg;
+        while (remainingThisMonth > 0.0001 && qIdx < queue.length) {
+          const item = queue[qIdx];
+          const take = Math.min(remainingThisMonth, item.remainingKg);
+          if (take > 0.0001) {
+            contribs.push({ month: cursor, supplier: item.contract.supplier || "(仕入先未設定)", price: item.contract.price, kg: take });
+            item.remainingKg -= take;
+            remainingThisMonth -= take;
+          }
+          if (item.remainingKg <= 0.001) qIdx++;
+        }
+        cursor = nextMonth(cursor);
+        guard++;
+      }
+    });
+    return contribs;
   }
 
   function renderPayment() {
@@ -1649,85 +1672,38 @@
     if (!body) return;
     body.innerHTML = "";
 
-    const rows = [];
-    const unknownSupplierRows = [];
+    const contribs = projectPaymentConsumption();
 
-    arrivals.forEach(a => {
-      const contract = entries.find(e => e.id === a.contractId && e.kind === "contract");
-      if (!contract) return;
-      const amount = a.bags * contract.weight * contract.price;
-      const schedule = computePaymentSchedule(a.date, contract.supplier);
-      const row = {
-        supplier: contract.supplier || "(仕入先未設定)",
-        date: a.date,
-        amount
-      };
-      if (schedule) {
-        rows.push({ ...row, payMonth: schedule.payMonth, payDateLabel: schedule.payDateLabel });
-      } else {
-        unknownSupplierRows.push(row);
-      }
+    const groups = {}; // key: payMonth|supplier -> { payMonth, payDateLabel, supplier, amount, months:Set, knownTerms }
+    contribs.forEach(c => {
+      const amount = c.kg * c.price;
+      const terms = PAYMENT_TERMS[c.supplier];
+      const payMonth = nextMonth(nextMonth(c.month));
+      const payDateLabel = terms ? `${monthLabel(payMonth)}${terms.payDay}` : `${monthLabel(payMonth)}(支払条件未設定)`;
+      const key = payMonth + "|" + c.supplier;
+      if (!groups[key]) groups[key] = { payMonth, payDateLabel, supplier: c.supplier, amount: 0, months: new Set(), knownTerms: !!terms };
+      groups[key].amount += amount;
+      groups[key].months.add(c.month);
     });
 
-    rows.sort((a, b) => a.payMonth.localeCompare(b.payMonth) || a.supplier.localeCompare(b.supplier, "ja") || a.date.localeCompare(b.date));
+    const rows = Object.values(groups).sort((a, b) =>
+      a.payMonth.localeCompare(b.payMonth) || a.supplier.localeCompare(b.supplier, "ja")
+    );
 
-    emptyEl.style.display = (rows.length === 0 && unknownSupplierRows.length === 0) ? "block" : "none";
+    emptyEl.style.display = rows.length === 0 ? "block" : "none";
 
-    let html = "";
-    let currentGroup = null;
-    let groupAmount = 0;
-    let groupDates = [];
-
-    const flushGroup = () => {
-      if (!currentGroup) return;
-      html += `
-        <tr>
-          <td>${currentGroup.payDateLabel}</td>
-          <td class="brand">${currentGroup.supplier}</td>
-          <td class="wrap">${groupDates.join("・")}</td>
-          <td class="num">¥${fmt(groupAmount)}</td>
+    body.innerHTML = rows.map(r => {
+      const monthsText = [...r.months].sort().map(m => monthLabel(m)).join("・");
+      const warnCls = r.knownTerms ? "" : " style=\"color:var(--ink-faint);\"";
+      return `
+        <tr${warnCls}>
+          <td>${r.payDateLabel}</td>
+          <td class="brand">${r.supplier}</td>
+          <td class="wrap">${monthsText}使用予測分</td>
+          <td class="num">¥${fmt(r.amount)}</td>
         </tr>
       `;
-    };
-
-    rows.forEach(r => {
-      const groupKey = r.payMonth + "|" + r.supplier;
-      if (!currentGroup || currentGroup.key !== groupKey) {
-        flushGroup();
-        currentGroup = { key: groupKey, payDateLabel: r.payDateLabel, supplier: r.supplier };
-        groupAmount = 0;
-        groupDates = [];
-      }
-      groupAmount += r.amount;
-      groupDates.push(r.date);
-    });
-    flushGroup();
-
-    if (unknownSupplierRows.length > 0) {
-      const totalUnknown = unknownSupplierRows.reduce((s, r) => s + r.amount, 0);
-      const bySupplier = {};
-      unknownSupplierRows.forEach(r => {
-        if (!bySupplier[r.supplier]) bySupplier[r.supplier] = 0;
-        bySupplier[r.supplier] += r.amount;
-      });
-      html += `
-        <tr style="border-top:2px solid var(--line);">
-          <td colspan="4" style="padding-top:14px; color:var(--ink-soft); font-size:11px;">支払い条件が未設定の仕入先(合計 ¥${fmt(totalUnknown)})。設定が必要であれば教えてください。</td>
-        </tr>
-      `;
-      Object.keys(bySupplier).forEach(supplier => {
-        html += `
-          <tr>
-            <td>―</td>
-            <td class="brand">${supplier}</td>
-            <td class="wrap">―</td>
-            <td class="num">¥${fmt(bySupplier[supplier])}</td>
-          </tr>
-        `;
-      });
-    }
-
-    body.innerHTML = html;
+    }).join("");
   }
 
   function showUsageStats(usage, monthKg) {
