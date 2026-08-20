@@ -500,6 +500,28 @@
     flex-wrap: wrap;
     gap: 10px 16px;
   }
+
+  .forecast-months {
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 8px;
+  }
+  .forecast-month {
+    min-width: 44px;
+    text-align: center;
+    font-size: 11px;
+  }
+  .forecast-month-label {
+    display: block;
+    color: var(--ink-soft);
+    font-size: 9.5px;
+    white-space: nowrap;
+  }
+  .forecast-month-value {
+    display: block;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
   .forecast-quarter {
     min-width: 130px;
     font-size: 11px;
@@ -1012,7 +1034,7 @@
 
     <div class="tab-panel" data-tab-panel="forecast" hidden>
       <div style="padding:18px 22px 4px;"><h2>在庫切れ予測</h2></div>
-      <p class="hint" style="padding:0 22px 10px;">使用用途ごとの現在の契約残数(まだ使い切っていない契約の合計)を、直近1年間の平均使用量で割って、あと何ヶ月・何年何月頃に在庫が無くなりそうかを予測します。実績データが無い、または残数が無い使用用途は表示されません。在庫が無くなる予測が早い順に並び、残り2ヶ月以内は赤字、2〜3ヶ月は緑字で強調表示されます。</p>
+      <p class="hint" style="padding:0 22px 10px;">使用用途ごとの現在の契約残数(まだ使い切っていない契約の合計)を、直近1年間の平均使用量で割って、あと何ヶ月・何年何月頃に在庫が無くなりそうかを予測します(季節差をならすため、予測計算には12ヶ月平均を使っています)。「直近6ヶ月の実績」は月ごとの実際の使用袋数をそのまま並べたもので、季節による増減の傾向を確認する参考用です。実績データが無い、または残数が無い使用用途は表示されません。在庫が無くなる予測が早い順に並び、残り2ヶ月以内は赤字、2〜3ヶ月は緑字で強調表示されます。</p>
       <div class="table-wrap">
         <table class="entries-table" id="forecast-table">
           <thead>
@@ -1021,6 +1043,7 @@
               <th class="num">現在庫</th>
               <th class="num">残り期間</th>
               <th>在庫切れ予測時期</th>
+              <th>直近6ヶ月の実績(袋)</th>
               <th>前回契約の数量・単価</th>
             </tr>
           </thead>
@@ -1468,6 +1491,17 @@
     return quarters;
   }
 
+  // anchorMonthを含む直近monthCountヶ月分を古い月→新しい月の順で返す({月, kg})
+  function getRecentMonths(monthKg, monthCount, anchorMonth) {
+    const months = [];
+    let cursor = anchorMonth;
+    for (let i = 0; i < monthCount; i++) {
+      months.unshift({ month: cursor, kg: monthKg[cursor] || 0 });
+      cursor = prevMonth(cursor);
+    }
+    return months;
+  }
+
   // 使用用途ごとに、開始月が一番新しい契約(=前回契約)を返す({使用用途: 契約})
   function getLastContractByUsage() {
     const last = {};
@@ -1512,7 +1546,8 @@
         for (let i = 0; i < Math.ceil(monthsRemaining); i++) cursor = nextMonth(cursor);
         runOutMonth = cursor;
       }
-      return { usage, remainingKg, bagWeight, avgMonthlyKg, monthsRemaining, runOutMonth };
+      const recentMonths = getRecentMonths(combined[usage] || {}, 6, lastCompleteMonth);
+      return { usage, remainingKg, bagWeight, avgMonthlyKg, monthsRemaining, runOutMonth, recentMonths };
     }).sort((a, b) => {
       if (a.monthsRemaining == null) return 1;
       if (b.monthsRemaining == null) return -1;
@@ -1537,12 +1572,19 @@
       const lastContractText = lc
         ? `${fmt(lc.bags)}袋(${fmt(lc.bags * lc.weight)}kg)<span class="sub">¥${fmt(lc.price)}/kg・${monthLabel(lc.start)}〜${monthLabel(lc.end)}</span>`
         : "―";
+      const recentHtml = r.recentMonths.map(m => `
+        <div class="forecast-month">
+          <span class="forecast-month-label">${monthLabel(m.month)}</span>
+          <span class="forecast-month-value">${fmt1(m.kg / r.bagWeight)}袋</span>
+        </div>
+      `).join("");
       return `
         <tr>
           <td class="brand">${r.usage}</td>
           <td class="num">${fmt1(remainingBags)}袋<span class="sub">${fmt(r.remainingKg)}kg</span></td>
           <td class="num"${urgentCls}>${periodText}</td>
           <td${urgentCls}>${runOutText}</td>
+          <td class="forecast-months">${recentHtml}</td>
           <td class="num">${lastContractText}</td>
         </tr>
       `;
