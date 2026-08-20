@@ -923,8 +923,8 @@
     </div>
 
     <div class="tab-panel" data-tab-panel="usage-history" hidden>
-      <div style="padding:18px 22px 4px;"><h2>各月 使用用途別 生豆使用量 (kg・麻袋換算)</h2></div>
-      <p class="hint" style="padding:0 22px 10px;">使用用途ごとに、「入荷処理」タブで記録した実績を月別に集計して表示します(契約の理論上の残数配分は含みません)。「入荷処理」に未登録の月は、仕入システムからの実績集計値を斜体で参考表示します(セルにマウスを乗せるとどちらのデータか分かります)。生産国ごとの麻袋換算数量をメインで表示し、下に小さくkg数も表示します。左端の使用用途名をクリックすると、直近1年・半年・3ヶ月の使用量と月平均を表示します。</p>
+      <div style="padding:18px 22px 4px;"><h2>各月 使用用途別 生豆使用量 (kg・袋換算)</h2></div>
+      <p class="hint" style="padding:0 22px 10px;">使用用途ごとに、「入荷処理」タブで記録した実績を月別に集計して表示します(契約の理論上の残数配分は含みません)。「入荷処理」に未登録の月は、仕入システムからの実績集計値を斜体で参考表示します(セルにマウスを乗せるとどちらのデータか分かります)。生産国ごとの袋換算数量をメインで表示し、下に小さくkg数も表示します。左端の使用用途名をクリックすると、直近1年・半年・3ヶ月の使用量と月平均を表示します。</p>
       <div id="uh-stats" class="uh-stats" hidden></div>
       <div class="table-wrap">
         <table class="matrix" id="usage-matrix"></table>
@@ -1173,14 +1173,14 @@
     return { costMap, usageCostMap, months: [...monthSet].sort() };
   }
 
-  // 生産国ごとの麻袋換算用の標準重量(kg/袋)
+  // 生産国ごとの袋換算用の標準重量(kg/袋)
   const BAG_WEIGHT_BY_COUNTRY = {
     "ブラジル": 60, "コロンビア": 70, "グアテマラ": 69, "エチオピア": 60,
     "ホンジュラス": 69, "ベトナム": 60, "インドネシア": 60, "タンザニア": 60,
     "ジャマイカ": 60
   };
 
-  // 使用用途から対応する生産国を推測する(麻袋換算用)。契約/当月買いに登録済みのものから探し、無ければ使用用途名をそのまま国名とみなす。
+  // 使用用途から対応する生産国を推測する(袋換算用)。契約/当月買いに登録済みのものから探し、無ければ使用用途名をそのまま国名とみなす。
   function usageToCountry(usage) {
     const found = entries.find(e => e.usage === usage);
     return found ? found.country : usage;
@@ -1236,6 +1236,7 @@
     const monthSet = new Set();
     Object.values(detail).forEach(byMonth => Object.keys(byMonth).forEach(m => monthSet.add(m)));
     Object.values(historicalUsageKg).forEach(byMonth => Object.keys(byMonth).forEach(m => monthSet.add(m)));
+    monthSet.add(currentMonthStr()); // データが無くても当月の列は必ず出す(当月を一番右にするため)
     const months = [...monthSet].sort(); // 古い月→新しい月の順(当月が一番右)
 
     if (usageList.length === 0 || months.length === 0) {
@@ -1277,13 +1278,13 @@
           const breakdown = Object.keys(cellData.byCountry)
             .sort((a, b) => cellData.byCountry[b] - cellData.byCountry[a])
             .map(country => `${country}: ${fmt(cellData.byCountry[country])}kg`).join(" / ");
-          cells += `<td class="cell${curCls}" title="${breakdown}(入荷処理実績)">${fmt1(totalBags)}<span class="unit">麻袋</span><span class="sub">${fmt(totalKg)}kg</span></td>`;
+          cells += `<td class="cell${curCls}" title="${breakdown}(入荷処理実績)">${fmt1(totalBags)}<span class="unit">袋</span><span class="sub">${fmt(totalKg)}kg</span></td>`;
         } else if (histKg != null) {
           combinedByUsage[usage][m] = histKg;
           const country = usageToCountry(usage);
           const bagWeight = BAG_WEIGHT_BY_COUNTRY[country] || 60;
           const bags = histKg / bagWeight;
-          cells += `<td class="cell historical${curCls}" title="仕入実績の集計値(入荷処理タブへの個別登録はまだありません)">${fmt1(bags)}<span class="unit">麻袋</span><span class="sub">${fmt(histKg)}kg</span></td>`;
+          cells += `<td class="cell historical${curCls}" title="仕入実績の集計値(入荷処理タブへの個別登録はまだありません)">${fmt1(bags)}<span class="unit">袋</span><span class="sub">${fmt(histKg)}kg</span></td>`;
         } else {
           cells += `<td class="cell empty-cell${curCls}">―</td>`;
         }
@@ -1325,8 +1326,8 @@
     const block = (label, stat) => `
       <div class="uh-stat-block">
         <span class="uh-stat-label">${label}</span>
-        <span class="uh-stat-value">${fmt1(stat.total / bagWeight)} 麻袋</span>
-        <span class="uh-stat-avg">月平均 ${fmt1(stat.avg / bagWeight)} 麻袋/月　(${fmt(stat.total)}kg・月平均${fmt1(stat.avg)}kg)</span>
+        <span class="uh-stat-value">${fmt1(stat.total / bagWeight)} 袋</span>
+        <span class="uh-stat-avg">月平均 ${fmt1(stat.avg / bagWeight)} 袋/月　(${fmt(stat.total)}kg・月平均${fmt1(stat.avg)}kg)</span>
       </div>
     `;
     panel.innerHTML = `<span class="uh-stat-title">${usage}(当月を含む直近実績)</span>` +
