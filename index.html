@@ -1301,6 +1301,12 @@
         showUsageStats(usage, combinedByUsage[usage] || {});
       });
     });
+
+    // 開いた直後から一番右(先月)が見える位置までスクロールしておく
+    const wrap = table.closest(".table-wrap");
+    if (wrap) {
+      requestAnimationFrame(() => { wrap.scrollLeft = wrap.scrollWidth; });
+    }
   }
 
   // 当月を含む直近N ヶ月分の使用量合計・月平均を計算する({monthKg}は { 月: kg })
