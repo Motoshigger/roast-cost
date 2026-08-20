@@ -2364,6 +2364,10 @@
       });
       document.getElementById("entries-panel").hidden = target === "balance" || target === "arrival" || target === "matrix" || target === "roast" || target === "roast-matrix" || target === "usage-history" || target === "history";
       if (target === "roast") renderComponentRows();
+      if (target === "usage-history") {
+        const wrap = document.getElementById("usage-matrix").closest(".table-wrap");
+        if (wrap) requestAnimationFrame(() => { wrap.scrollLeft = wrap.scrollWidth; });
+      }
       renderEntries();
     });
   });
