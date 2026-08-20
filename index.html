@@ -935,7 +935,7 @@
 
     <div class="tab-panel" data-tab-panel="forecast" hidden>
       <div style="padding:18px 22px 4px;"><h2>在庫切れ予測</h2></div>
-      <p class="hint" style="padding:0 22px 10px;">使用用途ごとの現在の契約残数(まだ使い切っていない契約の合計)を、直近1年間の平均使用量で割って、あと何ヶ月・何年何月頃に在庫が無くなりそうかを予測します。実績データが無い、または残数が無い使用用途は表示されません。在庫が無くなる予測が早い順に並びます。</p>
+      <p class="hint" style="padding:0 22px 10px;">使用用途ごとの現在の契約残数(まだ使い切っていない契約の合計)を、直近1年間の平均使用量で割って、あと何ヶ月・何年何月頃に在庫が無くなりそうかを予測します。実績データが無い、または残数が無い使用用途は表示されません。在庫が無くなる予測が早い順に並び、残り2ヶ月以内は赤字、2〜3ヶ月は緑字で強調表示されます。</p>
       <div class="table-wrap">
         <table class="entries-table" id="forecast-table">
           <thead>
@@ -1413,7 +1413,10 @@
           ? "1ヶ月未満"
           : `約${fmt1(r.monthsRemaining)}ヶ月`;
       const runOutText = r.runOutMonth ? monthLabel(r.runOutMonth) + "頃" : "―";
-      const urgentCls = r.monthsRemaining != null && r.monthsRemaining <= 3 ? " style=\"color:var(--danger);font-weight:600;\"" : "";
+      const urgentCls = r.monthsRemaining == null ? ""
+        : r.monthsRemaining <= 2 ? " style=\"color:var(--danger);font-weight:600;\""
+        : r.monthsRemaining <= 3 ? " style=\"color:var(--accent);font-weight:600;\""
+        : "";
       return `
         <tr>
           <td class="brand">${r.usage}</td>
