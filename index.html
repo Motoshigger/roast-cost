@@ -1233,11 +1233,12 @@
     };
     const usageList = [...usages].sort((a, b) => totalKgForUsage(b) - totalKgForUsage(a));
 
+    const lastCompleteMonth = prevMonth(currentMonthStr());
     const monthSet = new Set();
     Object.values(detail).forEach(byMonth => Object.keys(byMonth).forEach(m => monthSet.add(m)));
     Object.values(historicalUsageKg).forEach(byMonth => Object.keys(byMonth).forEach(m => monthSet.add(m)));
-    monthSet.add(currentMonthStr()); // データが無くても当月の列は必ず出す(当月を一番右にするため)
-    const months = [...monthSet].sort(); // 古い月→新しい月の順(当月が一番右)
+    monthSet.add(lastCompleteMonth); // データが無くても先月の列は必ず出す(先月を一番右にするため)
+    const months = [...monthSet].filter(m => m <= lastCompleteMonth).sort(); // 古い月→新しい月の順(当月分はまだ実績が揃わないため含めず、先月が一番右)
 
     if (usageList.length === 0 || months.length === 0) {
       emptyEl.style.display = "block";
@@ -1245,13 +1246,11 @@
     }
     emptyEl.style.display = "none";
 
-    const currentMonth = currentMonthStr();
-
     const thead = document.createElement("thead");
     const headRow = document.createElement("tr");
     headRow.innerHTML = `<th class="usage-first-col">使用用途</th>` + months.map(m => {
-      const isCurrent = m === currentMonth;
-      return `<th class="num${isCurrent ? " current-month" : ""}">${monthLabel(m)}${isCurrent ? `<span class="sub">今月</span>` : ""}</th>`;
+      const isLast = m === lastCompleteMonth;
+      return `<th class="num${isLast ? " current-month" : ""}">${monthLabel(m)}${isLast ? `<span class="sub">先月</span>` : ""}</th>`;
     }).join("");
     thead.appendChild(headRow);
     table.appendChild(thead);
@@ -1267,7 +1266,7 @@
       months.forEach(m => {
         const cellData = detail[usage] && detail[usage][m];
         const histKg = historicalUsageKg[usage] && historicalUsageKg[usage][m];
-        const curCls = m === currentMonth ? " current-month" : "";
+        const curCls = m === lastCompleteMonth ? " current-month" : "";
         if (cellData) {
           const totalKg = cellData.totalKg;
           combinedByUsage[usage][m] = totalKg;
