@@ -1215,7 +1215,23 @@
     const detail = getUsageArrivalDetail(); // { 使用用途: { 月: { totalKg, byCountry: {国: kg} } } } (入荷処理の実績)
     const usages = new Set(uniqueUsages());
     Object.keys(historicalUsageKg).forEach(u => usages.add(u));
-    const usageList = [...usages].sort((a, b) => a.localeCompare(b, "ja"));
+
+    // 数量(実績優先・無ければ仕入集計値)の合計が多い順に並べる
+    const totalKgForUsage = usage => {
+      const monthsForUsage = new Set([
+        ...Object.keys(detail[usage] || {}),
+        ...Object.keys(historicalUsageKg[usage] || {})
+      ]);
+      let total = 0;
+      monthsForUsage.forEach(m => {
+        const actual = detail[usage] && detail[usage][m];
+        if (actual) { total += actual.totalKg; return; }
+        const hist = historicalUsageKg[usage] && historicalUsageKg[usage][m];
+        if (hist != null) total += hist;
+      });
+      return total;
+    };
+    const usageList = [...usages].sort((a, b) => totalKgForUsage(b) - totalKgForUsage(a));
 
     const monthSet = new Set();
     Object.values(detail).forEach(byMonth => Object.keys(byMonth).forEach(m => monthSet.add(m)));
