@@ -2070,17 +2070,20 @@
       return;
     }
     document.getElementById("account-email").textContent = user.email;
-
-    // まずローカル保存分で即表示(オフラインでも操作できるように)
     suppressSave = true;
-    if (!loadStateLocal()) {
-      entries.push({ id: nextId++, kind: "contract", country: "エチオピア", product: "イルガチェフェ", brand: "エチオピア イルガチェフェ", supplier: "〇〇商事", contractNo: "2026-0142", usage: "シングルオリジン販売用", start: "2026-08", end: "2026-12", bags: 10, weight: 30, price: 900, openingRemaining: null });
-      nextId = 2;
-    }
-    renderAll();
 
-    // Firestoreからの読み取り権限を確認(許可リスト外なら permission-denied が返る)
-    ledgerDocRef.get().then(() => {
+    // 先に共有データ(Firestore)を取得してから画面に反映する。
+    // ここでローカルの仮データを先に読み込んで表示してしまうと、
+    // 共有データの取得が完了する前に何か操作された場合に、
+    // 仮データで共有データを上書きしてしまう事故につながるため、必ず取得後に反映する。
+    ledgerDocRef.get().then(doc => {
+      if (doc.exists) {
+        applyState(doc.data());
+      } else if (!loadStateLocal()) {
+        entries.push({ id: nextId++, kind: "contract", country: "エチオピア", product: "イルガチェフェ", brand: "エチオピア イルガチェフェ", supplier: "〇〇商事", contractNo: "2026-0142", usage: "シングルオリジン販売用", start: "2026-08", end: "2026-12", bags: 10, weight: 30, price: 900, openingRemaining: null });
+        nextId = 2;
+      }
+      renderAll();
       gateEl.hidden = true;
       appEl.hidden = false;
       subscribeToLedger();
@@ -2090,7 +2093,12 @@
         gateErrorEl.textContent = "このアカウント(" + user.email + ")にはアクセス権がありません。管理者に許可リストへの追加を依頼してください。";
         auth.signOut();
       } else {
-        gateErrorEl.textContent = "接続エラー: " + err.message;
+        // オフライン等で共有データを取得できない場合は、この端末のローカル保存分のみで表示する(共有データへは書き込まない)
+        setSyncStatus("接続できません。オフラインのため、この端末の保存内容のみ表示しています。");
+        loadStateLocal();
+        renderAll();
+        gateEl.hidden = true;
+        appEl.hidden = false;
       }
     });
   });
