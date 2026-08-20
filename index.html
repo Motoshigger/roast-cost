@@ -1711,13 +1711,17 @@
         .sort();
       if (monthsInGroup.length === 0) return;
 
-      const headCells = `<th>支払月</th>` + group.suppliers.map(s => `<th class="num">${s}</th>`).join("") + `<th class="num">合計</th>`;
-      const bodyRows = monthsInGroup.map(m => {
-        const rowVals = group.suppliers.map(s => amountByMonthSupplier[m][s] || 0);
-        const rowTotal = rowVals.reduce((a, b) => a + b, 0);
+      const headCells = `<th>仕入先</th>` + monthsInGroup.map(m => {
         const isCurrent = m === currentMonth;
-        const cells = rowVals.map(v => `<td class="num${isCurrent ? " current-month" : ""}">${v > 0 ? "¥" + fmt(v) : "―"}</td>`).join("");
-        return `<tr><td${isCurrent ? ' class="current-month"' : ""}>${monthLabel(m)}${isCurrent ? '<span class="sub">今月</span>' : ""}</td>${cells}<td class="num" style="font-weight:600;">¥${fmt(rowTotal)}</td></tr>`;
+        return `<th class="num${isCurrent ? " current-month" : ""}">${monthLabel(m)}${isCurrent ? '<span class="sub">今月</span>' : ""}</th>`;
+      }).join("");
+      const bodyRows = group.suppliers.map(s => {
+        const cells = monthsInGroup.map(m => {
+          const v = amountByMonthSupplier[m][s] || 0;
+          const isCurrent = m === currentMonth;
+          return `<td class="num${isCurrent ? " current-month" : ""}">${v > 0 ? "¥" + fmt(v) : "―"}</td>`;
+        }).join("");
+        return `<tr><td class="brand">${s}</td>${cells}</tr>`;
       }).join("");
 
       const section = document.createElement("div");
