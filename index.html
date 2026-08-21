@@ -2171,6 +2171,22 @@
       ? `実績(¥${fmt(actualCost)}/kg)から <strong style="color:${diffColor};">${diff >= 0 ? "+" : ""}${fmt1(diff)}円/kg(${diffPct >= 0 ? "+" : ""}${fmt1(diffPct)}%)</strong>`
       : "(実績データが無いため比較できません)";
 
+    // 配合を変えた場合、裏面表記(生産国表示)が変わってしまわないかをチェックする
+    let labelHtml = "";
+    if (product.type !== "aftermix") {
+      const originalLabel = getBackLabelText(product);
+      const simComposition = getCountryCompositionFromComponents(
+        simDraft.components.map(c => ({ ref: c.ref, ratio: c.ratio })),
+        product.type
+      );
+      const simLabel = getBackLabelTextFromComposition(simComposition);
+      if (simLabel !== originalLabel) {
+        labelHtml = `<div class="warn" style="margin-top:10px;">裏面表記が変わります: 「${originalLabel}」→「${simLabel}」</div>`;
+      } else {
+        labelHtml = `<p style="margin:8px 0 0; font-size:12px; color:var(--ink-faint);">裏面表記は変わりません(${originalLabel})</p>`;
+      }
+    }
+
     resultEl.innerHTML = ratioWarn + `
       <div class="card">
         <p style="margin:0 0 10px; font-size:13px; color:var(--ink-soft);">${conditionText}にすると、</p>
@@ -2178,6 +2194,7 @@
           ${product.name}の原価は <span style="color:var(--money);">¥${fmt(simCost)}/kg</span> になります
         </p>
         <p style="margin:8px 0 0; font-size:13px;">${diffText}</p>
+        ${labelHtml}
       </div>
     `;
   }
@@ -3057,23 +3074,22 @@
     render();
   }
 
-  // 商品の生産国別の構成比率を返す({国名: 比率(0〜100換算前の重み)})。アフターミックスは配合先の商品の構成を再帰的にたどって合算する。
-  function getCountryComposition(product, visited) {
+  // components(配列 [{ref, ratio}])とtypeから、生産国別の構成比率を返す({国名: 比率(0〜1の重み)})。
+  // アフターミックスは配合先の商品の実際の構成を再帰的にたどって合算する(参照先はシミュレーションしない)。
+  function getCountryCompositionFromComponents(components, type, visited) {
     visited = visited || new Set();
     const result = {};
-    if (visited.has(product.id)) return result; // 循環参照防止
-    visited = new Set(visited);
-    visited.add(product.id);
-
-    const totalRatio = product.components.reduce((s, c) => s + c.ratio, 0);
+    const totalRatio = components.reduce((s, c) => s + c.ratio, 0);
     if (totalRatio <= 0) return result;
 
-    product.components.forEach(comp => {
+    components.forEach(comp => {
       const weight = comp.ratio / totalRatio;
-      if (product.type === "aftermix") {
+      if (type === "aftermix") {
         const refProduct = roastedProducts.find(rp => String(rp.id) === String(comp.ref));
-        if (!refProduct) return;
-        const subComposition = getCountryComposition(refProduct, visited);
+        if (!refProduct || visited.has(refProduct.id)) return;
+        const subVisited = new Set(visited);
+        subVisited.add(refProduct.id);
+        const subComposition = getCountryCompositionFromComponents(refProduct.components, refProduct.type, subVisited);
         Object.keys(subComposition).forEach(country => {
           result[country] = (result[country] || 0) + subComposition[country] * weight;
         });
@@ -3085,13 +3101,21 @@
     return result;
   }
 
+  // 商品の生産国別の構成比率を返す(実際に保存されている配合内容を使う)
+  function getCountryComposition(product) {
+    return getCountryCompositionFromComponents(product.components, product.type, new Set([product.id]));
+  }
+
   // 裏面表記(食品表示法対応): 生産国名を多い順に表示し、3ヶ国以上ある場合は3番目以降を「その他」にまとめる
-  function getBackLabelText(product) {
-    const composition = getCountryComposition(product);
+  function getBackLabelTextFromComposition(composition) {
     const countries = Object.keys(composition).sort((a, b) => composition[b] - composition[a]);
     if (countries.length === 0) return "―";
     if (countries.length <= 2) return countries.join("、");
     return `${countries[0]}、${countries[1]}、その他`;
+  }
+
+  function getBackLabelText(product) {
+    return getBackLabelTextFromComposition(getCountryComposition(product));
   }
 
   function componentSummary(p) {
