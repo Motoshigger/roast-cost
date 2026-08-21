@@ -718,6 +718,7 @@
         <button class="tab-btn" data-tab="roast-matrix" role="tab" aria-selected="false">各月焙煎豆原価</button>
         <button class="tab-btn" data-tab="payment" role="tab" aria-selected="false">支払い管理</button>
         <button class="tab-btn" data-tab="payment-gap" role="tab" aria-selected="false">支払い管理(未契約分含む予測)</button>
+        <button class="tab-btn" data-tab="simulation" role="tab" aria-selected="false">原価シミュレーション</button>
 
         <span class="tab-group-label muted">その他</span>
         <button class="tab-btn tab-btn-muted" data-tab="roast" role="tab" aria-selected="false">焙煎豆商品登録</button>
@@ -1085,6 +1086,25 @@
       <p class="hint" style="padding:0 22px 10px;">既に契約が埋まっている期間はその契約の数量・単価をそのまま使い、契約で埋まっていない期間(在庫が尽きた後)は、前月の使用実績の数量と単価をそのまま当てはめて「まだ契約していない発注分」も含めて支払い予測を行います。仕入先が未定のため、契約が埋まっていない分は便宜上すべて「未定(20日締め翌々月15日払い想定)」として扱います。契約登録画面で「大口スポット発注」にチェックした契約は、在庫がいつ尽きるかの計算には(実際の残数として)含めたうえで、その契約自体の金額はこの表には表示しません。</p>
       <div id="payment-gap-groups"></div>
       <div class="empty" id="payment-gap-empty" style="display:none; margin:0 22px;">契約残数・使用実績のデータが揃うと、ここに支払い予測が表示されます。</div>
+    </div>
+
+    <div class="tab-panel" data-tab-panel="simulation" hidden>
+      <div style="padding:18px 22px 4px;"><h2>原価シミュレーション</h2></div>
+      <p class="hint" style="padding:0 22px 10px;">生豆の単価が変わったら、または配合比率を変えたら、焙煎後の原価がどう変わるかを試算します。ここでの変更は保存されず、実際のデータには一切影響しません。</p>
+      <div style="padding:0 22px 14px; display:flex; gap:14px; flex-wrap:wrap;">
+        <div class="field" style="max-width:320px;">
+          <label>対象の焙煎商品</label>
+          <select id="sim-product-select"></select>
+        </div>
+        <div class="field" style="max-width:220px;">
+          <label>基準にする月</label>
+          <select id="sim-month-select"></select>
+        </div>
+        <div class="field" style="max-width:160px; justify-content:flex-end;">
+          <button class="btn" id="sim-reset" type="button" style="margin-top:auto;">実績の値に戻す</button>
+        </div>
+      </div>
+      <div id="sim-body" style="padding:0 22px;"></div>
     </div>
 
     <div class="tab-panel" data-tab-panel="history" hidden>
@@ -1947,6 +1967,172 @@
     });
 
     return { roastedCostMap, missingMap, months };
+  }
+
+  // ==================== 原価シミュレーション ====================
+  let simDraft = null; // { components: [{ref, label, ratio, price}], roastLoss } ※保存はしない、その場限りの試算用
+
+  // 参照(使用用途 or 焙煎商品ID)から表示ラベルと、指定月の現在の単価/原価を取得する
+  function simRefInfo(type, ref, month, greenCostMap, roastedCostMap) {
+    if (type === "aftermix") {
+      const refProduct = roastedProducts.find(rp => String(rp.id) === String(ref));
+      const label = refProduct ? refProduct.name : "(削除済み商品)";
+      const price = refProduct ? (roastedCostMap[refProduct.id] && roastedCostMap[refProduct.id][month]) : null;
+      return { label, price };
+    }
+    const price = greenCostMap[ref] && greenCostMap[ref][month];
+    return { label: ref, price };
+  }
+
+  function buildSimDraft(product, month) {
+    const { usageCostMap: greenCostMap } = getGreenCostMap();
+    const { roastedCostMap } = computeRoastedCostMap();
+    const components = product.components.map(c => {
+      const info = simRefInfo(product.type, c.ref, month, greenCostMap, roastedCostMap);
+      return { ref: c.ref, label: info.label, ratio: c.ratio, price: info.price != null ? info.price : 0 };
+    });
+    return { components, roastLoss: product.roastLoss };
+  }
+
+  function renderSimTab() {
+    const productSelect = document.getElementById("sim-product-select");
+    const monthSelect = document.getElementById("sim-month-select");
+    if (!productSelect) return;
+
+    const prevProductValue = productSelect.value;
+    productSelect.innerHTML = roastedProducts.length === 0
+      ? `<option value="">焙煎商品が登録されていません</option>`
+      : roastedProducts.map(p => `<option value="${p.id}">${p.name}</option>`).join("");
+    if (roastedProducts.some(p => String(p.id) === prevProductValue)) productSelect.value = prevProductValue;
+
+    const { months } = computeRoastedCostMap();
+    const orderedMonths = orderMonthsCurrentFirst(months);
+    const prevMonthValue = monthSelect.value;
+    monthSelect.innerHTML = orderedMonths.length === 0
+      ? `<option value="">データがありません</option>`
+      : orderedMonths.map(m => `<option value="${m}">${monthLabel(m)}</option>`).join("");
+    if (orderedMonths.includes(prevMonthValue)) monthSelect.value = prevMonthValue;
+
+    resetSimDraft();
+  }
+
+  function resetSimDraft() {
+    const productSelect = document.getElementById("sim-product-select");
+    const monthSelect = document.getElementById("sim-month-select");
+    const body = document.getElementById("sim-body");
+    const productId = Number(productSelect.value);
+    const month = monthSelect.value;
+    const product = roastedProducts.find(p => p.id === productId);
+    if (!product || !month) {
+      body.innerHTML = `<p class="hint">対象の焙煎商品と月を選んでください。</p>`;
+      simDraft = null;
+      return;
+    }
+    simDraft = buildSimDraft(product, month);
+    renderSimBody(product, month);
+  }
+
+  function renderSimBody(product, month) {
+    const body = document.getElementById("sim-body");
+    const isAftermix = product.type === "aftermix";
+
+    const rows = simDraft.components.map((c, idx) => `
+      <tr>
+        <td class="wrap">${c.label}</td>
+        <td class="num"><input type="number" min="0" max="100" step="0.1" data-sim-ratio="${idx}" value="${c.ratio}" style="width:80px; text-align:right;"></td>
+        <td class="num"><input type="number" min="0" step="1" data-sim-price="${idx}" value="${fmt1(c.price)}" style="width:110px; text-align:right;"></td>
+      </tr>
+    `).join("");
+
+    body.innerHTML = `
+      <table class="entries-table">
+        <thead>
+          <tr><th>${isAftermix ? "配合する焙煎商品" : "使用用途"}</th><th class="num">配合比率(%)</th><th class="num">${isAftermix ? "原価(円/kg)" : "生豆単価(円/kg)"}</th></tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+      ${isAftermix ? "" : `
+        <div class="field" style="max-width:220px; margin-top:14px;">
+          <label>焙煎ロス率(%)</label>
+          <input type="number" min="0" max="99" step="0.1" id="sim-roast-loss" value="${simDraft.roastLoss}">
+        </div>
+      `}
+      <div id="sim-result" class="uh-stats" style="margin:18px 0 0;"></div>
+    `;
+
+    body.querySelectorAll("[data-sim-ratio]").forEach(input => {
+      input.addEventListener("input", () => {
+        simDraft.components[Number(input.dataset.simRatio)].ratio = Number(input.value) || 0;
+        renderSimResult(product);
+      });
+    });
+    body.querySelectorAll("[data-sim-price]").forEach(input => {
+      input.addEventListener("input", () => {
+        simDraft.components[Number(input.dataset.simPrice)].price = Number(input.value) || 0;
+        renderSimResult(product);
+      });
+    });
+    const lossInput = document.getElementById("sim-roast-loss");
+    if (lossInput) {
+      lossInput.addEventListener("input", () => {
+        simDraft.roastLoss = Number(lossInput.value) || 0;
+        renderSimResult(product);
+      });
+    }
+
+    renderSimResult(product);
+  }
+
+  function renderSimResult(product) {
+    const resultEl = document.getElementById("sim-result");
+    if (!resultEl || !simDraft) return;
+
+    const totalRatio = simDraft.components.reduce((s, c) => s + c.ratio, 0);
+    const weighted = simDraft.components.reduce((s, c) => s + c.price * c.ratio, 0);
+    const blended = totalRatio > 0 ? weighted / totalRatio : null;
+
+    let simCost = null;
+    if (blended != null) {
+      if (product.type === "aftermix") {
+        simCost = blended;
+      } else {
+        const lossFrac = simDraft.roastLoss / 100;
+        simCost = lossFrac < 1 ? blended / (1 - lossFrac) : null;
+      }
+    }
+
+    const monthSelect = document.getElementById("sim-month-select");
+    const month = monthSelect.value;
+    const { roastedCostMap } = computeRoastedCostMap();
+    const actualCost = roastedCostMap[product.id] && roastedCostMap[product.id][month];
+
+    const ratioWarn = Math.abs(totalRatio - 100) > 0.05 ? `<div class="warn" style="margin:0 0 10px;">配合比率の合計が${fmt1(totalRatio)}%です(100%になるよう調整してください)</div>` : "";
+
+    if (simCost == null) {
+      resultEl.innerHTML = ratioWarn + `<span class="uh-stat-title">計算できません(単価が未入力の項目があるか、焙煎ロス率が不正です)</span>`;
+      return;
+    }
+
+    const diff = actualCost != null ? simCost - actualCost : null;
+    const diffPct = actualCost != null && actualCost !== 0 ? (diff / actualCost) * 100 : null;
+    const diffColor = diff == null ? "" : diff > 0 ? "color:var(--danger);" : diff < 0 ? "color:var(--accent-ink);" : "";
+
+    resultEl.innerHTML = ratioWarn + `
+      <span class="uh-stat-title">${product.name} の試算結果(${monthLabel(month)}基準)</span>
+      <div class="uh-stat-block">
+        <span class="uh-stat-label">実績の焙煎後原価</span>
+        <span class="uh-stat-value">${actualCost != null ? "¥" + fmt(actualCost) + "/kg" : "―"}</span>
+      </div>
+      <div class="uh-stat-block">
+        <span class="uh-stat-label">シミュレーション後の原価</span>
+        <span class="uh-stat-value">¥${fmt(simCost)}/kg</span>
+      </div>
+      <div class="uh-stat-block">
+        <span class="uh-stat-label">差額(シミュレーション − 実績)</span>
+        <span class="uh-stat-value" style="${diffColor}">${diff != null ? (diff >= 0 ? "+" : "") + fmt1(diff) + "円/kg" : "―"}</span>
+        <span class="uh-stat-avg">${diffPct != null ? (diffPct >= 0 ? "+" : "") + fmt1(diffPct) + "%" : ""}</span>
+      </div>
+    `;
   }
 
   function addContract() {
@@ -2898,6 +3084,9 @@
     renderComponentRows();
   });
   document.getElementById("r-cancel-edit").addEventListener("click", cancelRoastEdit);
+  document.getElementById("sim-product-select").addEventListener("change", resetSimDraft);
+  document.getElementById("sim-month-select").addEventListener("change", resetSimDraft);
+  document.getElementById("sim-reset").addEventListener("click", resetSimDraft);
 
   document.getElementById("c-clear").addEventListener("click", cancelContractEdit);
   document.getElementById("c-cancel-edit").addEventListener("click", cancelContractEdit);
@@ -2915,7 +3104,8 @@
       document.querySelectorAll(".tab-panel").forEach(panel => {
         panel.hidden = panel.dataset.tabPanel !== target;
       });
-      document.getElementById("entries-panel").hidden = target === "balance" || target === "arrival" || target === "matrix" || target === "roast" || target === "roast-matrix" || target === "usage-history" || target === "forecast" || target === "payment" || target === "payment-gap" || target === "history";
+      document.getElementById("entries-panel").hidden = target === "balance" || target === "arrival" || target === "matrix" || target === "roast" || target === "roast-matrix" || target === "usage-history" || target === "forecast" || target === "payment" || target === "payment-gap" || target === "simulation" || target === "history";
+      if (target === "simulation") renderSimTab();
       if (target === "roast") renderComponentRows();
       if (target === "usage-history") {
         const wrap = document.getElementById("usage-matrix").closest(".table-wrap");
