@@ -1672,6 +1672,7 @@
         let remainingThisMonth = avgMonthlyKg;
         while (remainingThisMonth > 0.0001 && qIdx < queue.length) {
           const item = queue[qIdx];
+          if (item.contract.start > cursor) break; // まだ契約開始前なので、この月はまだ消化しない
           const take = Math.min(remainingThisMonth, item.remainingKg);
           if (take > 0.0001) {
             contribs.push({ month: cursor, supplier: item.contract.supplier || "(仕入先未設定)", price: item.contract.price, kg: take });
@@ -1823,6 +1824,7 @@
         let remainingThisMonth = monthlyRate;
         while (remainingThisMonth > 0.0001 && qIdx < queue.length) {
           const item = queue[qIdx];
+          if (item.contract.start > cursor) break; // まだ契約開始前なので、この月はまだ消化しない(未定分として扱う)
           const take = Math.min(remainingThisMonth, item.remainingKg);
           if (take > 0.0001) {
             if (!item.contract.excludeFromForecast) {
