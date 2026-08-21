@@ -2082,7 +2082,7 @@
 
     body.innerHTML = `
       <p class="hint" style="margin:0 0 10px;">下の「単価」欄に、変えたい生豆の新しい価格を入力してください。他の欄はそのままで大丈夫です。</p>
-      ${isAftermix ? "" : `<div style="margin:0 0 14px;"><button class="btn" id="sim-optimize" type="button">裏面表記を変えずに最もコストが下がる配合を計算</button></div>`}
+      ${isAftermix ? "" : `<div style="margin:0 0 14px;"><button class="btn" id="sim-optimize" type="button">裏面表記を変えずに最もコストが下がる配合を計算(各国最低15%)</button></div>`}
       <table class="entries-table">
         <thead>
           <tr><th>${isAftermix ? "配合する焙煎商品" : "使用用途"}</th><th class="num">配合比率(%)</th><th class="num">${isAftermix ? "原価(円/kg)" : "生豆単価(円/kg)"}</th></tr>
@@ -2123,7 +2123,7 @@
       optimizeBtn.addEventListener("click", () => {
         const result = optimizeBlendKeepingLabel(product);
         if (!result) {
-          alert("この商品は生産国が2種類以下のため、裏面表記を保ったまま最適化する対象がありません。");
+          alert("裏面表記を保ったまま、かつ各生産国を最低15%以上にする配合が組めませんでした(生産国が2種類以下か、生産国の数が多すぎる可能性があります)。");
           return;
         }
         simDraft.components.forEach((c, idx) => { c.ratio = Math.round(result.newRatios[idx] * 10) / 10; });
@@ -2135,13 +2135,38 @@
   }
 
   // 現在の単価(simDraftの試算単価)のまま、元の裏面表記(上位2ヶ国+その他)を保った上で
-  // 最もコストが下がる配合比率を計算する。同じ国に複数の使用用途がある場合は、その国の中で一番安いものに寄せる。
+  const SIM_MIN_RATIO = 15; // 風味に反映されるために最低限必要な配合比率(%)
+
+  // 合計totalを、items=[{price, cap}]の各要素に「最低SIM_MIN_RATIO・最大cap」の範囲で、
+  // 一番安いものから優先的に多く割り当てる形で配分する(コスト最小化)。配分不可能ならnullを返す。
+  function allocateBoundedCheapestFirst(total, items) {
+    const n = items.length;
+    if (total < SIM_MIN_RATIO * n - 1e-6) return null; // 全員に最低ラインを配れない
+    if (total > items.reduce((s, it) => s + it.cap, 0) + 1e-6) return null; // 上限を全部足しても足りない
+
+    const order = items.map((it, idx) => idx).sort((a, b) => items[a].price - items[b].price);
+    const alloc = items.map(() => SIM_MIN_RATIO);
+    let remaining = total - SIM_MIN_RATIO * n;
+    for (const idx of order) {
+      const room = items[idx].cap - SIM_MIN_RATIO;
+      const add = Math.min(room, remaining);
+      alloc[idx] += add;
+      remaining -= add;
+      if (remaining <= 1e-9) break;
+    }
+    if (remaining > 1e-6) return null; // 上限が足りず配りきれなかった
+    return alloc;
+  }
+
+  // 現在の単価(simDraftの試算単価)のまま、元の裏面表記(上位2ヶ国+その他)を保った上で、
+  // かつ使用する生産国はどれも最低SIM_MIN_RATIO%以上になるようにして、最もコストが下がる配合比率を計算する。
+  // 同じ国に複数の使用用途がある場合は、その国の中で一番安いものに寄せる。
   function optimizeBlendKeepingLabel(product) {
     const originalComposition = getCountryComposition(product);
     const rankedCountries = Object.keys(originalComposition).sort((a, b) => originalComposition[b] - originalComposition[a]);
     if (rankedCountries.length < 3) return null; // 「その他」が無い場合は最適化の対象外
 
-    const groups = {}; // 国名 -> { indices: [...], prices: [...] }
+    const groups = {}; // 国名 -> { indices: [...] }
     simDraft.components.forEach((c, idx) => {
       const country = usageToCountry(c.ref);
       if (!groups[country]) groups[country] = { country, indices: [] };
@@ -2155,45 +2180,38 @@
 
     const g1Country = rankedCountries[0], g2Country = rankedCountries[1];
     if (!groups[g1Country] || !groups[g2Country]) return null;
-    const otherCountries = rankedCountries.slice(2).filter(c => groups[c]);
-    if (otherCountries.length === 0) return null;
-
-    const otherGroups = otherCountries.map(c => groups[c]);
-    const otherBaseTotal = otherGroups.reduce((s, g) => s + g.indices.reduce((s2, idx) => s2 + simDraft.components[idx].baseRatio, 0), 0);
-    const otherShare = {};
-    otherGroups.forEach(g => {
-      const groupBase = g.indices.reduce((s, idx) => s + simDraft.components[idx].baseRatio, 0);
-      otherShare[g.country] = otherBaseTotal > 0 ? groupBase / otherBaseTotal : 1 / otherGroups.length;
-    });
-    const maxOtherShare = Math.max(...Object.values(otherShare));
+    const otherGroups = rankedCountries.slice(2).filter(c => groups[c]).map(c => groups[c]);
+    if (otherGroups.length === 0) return null;
+    const m = otherGroups.length;
 
     const c1 = groups[g1Country].price;
     const c2 = groups[g2Country].price;
-    const cOther = otherGroups.reduce((s, g) => s + g.price * otherShare[g.country], 0);
-
-    const MIN_OTHER_TOTAL = 1; // 「その他」に最低限残す比率(%)。0だと裏面表記からその他が消えてしまうため。
 
     let best = null;
-    const steps = 2000;
+    const steps = 340; // 15%刻み以上の粒度は不要なので、R1・R2それぞれ0.25%刻み相当
     for (let i = 0; i <= steps; i++) {
-      const R1 = (i / steps) * 100;
-      const r2Min = Math.max(0, maxOtherShare * (100 - R1) / (1 + maxOtherShare));
-      const r2Max = Math.min(R1, 100 - MIN_OTHER_TOTAL - R1);
-      if (r2Max < r2Min - 1e-9) continue;
-      const R2 = (c2 - cOther) <= 0 ? r2Max : r2Min;
-      const otherTotal = 100 - R1 - R2;
-      const cost = R1 * c1 + R2 * c2 + otherTotal * cOther;
-      if (!best || cost < best.cost - 1e-9) {
-        best = { R1, R2, otherTotal, cost };
+      const R1 = SIM_MIN_RATIO + (i / steps) * (100 - SIM_MIN_RATIO);
+      for (let j = 0; j <= steps; j++) {
+        const R2 = SIM_MIN_RATIO + (j / steps) * (100 - SIM_MIN_RATIO);
+        if (R2 > R1 + 1e-9) continue; // 1位 >= 2位 を維持
+        const otherTotal = 100 - R1 - R2;
+        if (otherTotal < SIM_MIN_RATIO * m - 1e-6) continue; // 「その他」各国に最低ラインを配れない
+        const alloc = allocateBoundedCheapestFirst(otherTotal, otherGroups.map(g => ({ price: g.price, cap: R2 })));
+        if (!alloc) continue;
+        const otherCost = otherGroups.reduce((s, g, idx) => s + g.price * alloc[idx], 0);
+        const cost = R1 * c1 + R2 * c2 + otherCost;
+        if (!best || cost < best.cost - 1e-9) {
+          best = { R1, R2, alloc, cost };
+        }
       }
     }
-    if (!best) return null;
+    if (!best) return null; // 15%の最低ラインでは裏面表記を保てる配合が組めない
 
     const newRatios = simDraft.components.map(() => 0);
     newRatios[groups[g1Country].cheapestIdx] = best.R1;
     newRatios[groups[g2Country].cheapestIdx] = best.R2;
-    otherGroups.forEach(g => {
-      newRatios[g.cheapestIdx] = best.otherTotal * otherShare[g.country];
+    otherGroups.forEach((g, idx) => {
+      newRatios[g.cheapestIdx] = best.alloc[idx];
     });
     return { newRatios };
   }
