@@ -2323,11 +2323,18 @@
         const curCls = m === currentMonth ? " current-month" : "";
         if (simPrice != null) {
           let diffStyle = "";
+          let diffHtml = "";
           if (actualPrice != null) {
-            if (simPrice > actualPrice + 0.01) diffStyle = "color:var(--sim-up); font-weight:700;";
-            else if (simPrice < actualPrice - 0.01) diffStyle = "color:var(--sim-down); font-weight:700;";
+            const diff = simPrice - actualPrice;
+            if (diff > 0.01) {
+              diffStyle = "color:var(--sim-up); font-weight:700;";
+              diffHtml = `<span class="sub" style="color:var(--sim-up);">+${fmt1(diff)}円</span>`;
+            } else if (diff < -0.01) {
+              diffStyle = "color:var(--sim-down); font-weight:700;";
+              diffHtml = `<span class="sub" style="color:var(--sim-down);">${fmt1(diff)}円</span>`;
+            }
           }
-          cells += `<td class="cell${curCls}" style="${diffStyle}">¥${fmt(simPrice)}<span class="unit">/kg</span></td>`;
+          cells += `<td class="cell${curCls}" style="${diffStyle}">¥${fmt(simPrice)}<span class="unit">/kg</span>${diffHtml}</td>`;
         } else {
           const missing = (missingMap[p.id] && missingMap[p.id][m]) || [];
           const reason = missing.length > 0
