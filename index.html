@@ -2082,6 +2082,7 @@
 
     body.innerHTML = `
       <p class="hint" style="margin:0 0 10px;">下の「単価」欄に、変えたい生豆の新しい価格を入力してください。他の欄はそのままで大丈夫です。</p>
+      ${isAftermix ? "" : `<div style="margin:0 0 14px;"><button class="btn" id="sim-optimize" type="button">裏面表記を変えずに最もコストが下がる配合を計算</button></div>`}
       <table class="entries-table">
         <thead>
           <tr><th>${isAftermix ? "配合する焙煎商品" : "使用用途"}</th><th class="num">配合比率(%)</th><th class="num">${isAftermix ? "原価(円/kg)" : "生豆単価(円/kg)"}</th></tr>
@@ -2117,7 +2118,84 @@
       });
     }
 
+    const optimizeBtn = document.getElementById("sim-optimize");
+    if (optimizeBtn) {
+      optimizeBtn.addEventListener("click", () => {
+        const result = optimizeBlendKeepingLabel(product);
+        if (!result) {
+          alert("この商品は生産国が2種類以下のため、裏面表記を保ったまま最適化する対象がありません。");
+          return;
+        }
+        simDraft.components.forEach((c, idx) => { c.ratio = Math.round(result.newRatios[idx] * 10) / 10; });
+        renderSimBody(product, month);
+      });
+    }
+
     renderSimResult(product);
+  }
+
+  // 現在の単価(simDraftの試算単価)のまま、元の裏面表記(上位2ヶ国+その他)を保った上で
+  // 最もコストが下がる配合比率を計算する。同じ国に複数の使用用途がある場合は、その国の中で一番安いものに寄せる。
+  function optimizeBlendKeepingLabel(product) {
+    const originalComposition = getCountryComposition(product);
+    const rankedCountries = Object.keys(originalComposition).sort((a, b) => originalComposition[b] - originalComposition[a]);
+    if (rankedCountries.length < 3) return null; // 「その他」が無い場合は最適化の対象外
+
+    const groups = {}; // 国名 -> { indices: [...], prices: [...] }
+    simDraft.components.forEach((c, idx) => {
+      const country = usageToCountry(c.ref);
+      if (!groups[country]) groups[country] = { country, indices: [] };
+      groups[country].indices.push(idx);
+    });
+    Object.values(groups).forEach(g => {
+      g.cheapestIdx = g.indices.reduce((best, idx) =>
+        simDraft.components[idx].price < simDraft.components[best].price ? idx : best, g.indices[0]);
+      g.price = simDraft.components[g.cheapestIdx].price;
+    });
+
+    const g1Country = rankedCountries[0], g2Country = rankedCountries[1];
+    if (!groups[g1Country] || !groups[g2Country]) return null;
+    const otherCountries = rankedCountries.slice(2).filter(c => groups[c]);
+    if (otherCountries.length === 0) return null;
+
+    const otherGroups = otherCountries.map(c => groups[c]);
+    const otherBaseTotal = otherGroups.reduce((s, g) => s + g.indices.reduce((s2, idx) => s2 + simDraft.components[idx].baseRatio, 0), 0);
+    const otherShare = {};
+    otherGroups.forEach(g => {
+      const groupBase = g.indices.reduce((s, idx) => s + simDraft.components[idx].baseRatio, 0);
+      otherShare[g.country] = otherBaseTotal > 0 ? groupBase / otherBaseTotal : 1 / otherGroups.length;
+    });
+    const maxOtherShare = Math.max(...Object.values(otherShare));
+
+    const c1 = groups[g1Country].price;
+    const c2 = groups[g2Country].price;
+    const cOther = otherGroups.reduce((s, g) => s + g.price * otherShare[g.country], 0);
+
+    const MIN_OTHER_TOTAL = 1; // 「その他」に最低限残す比率(%)。0だと裏面表記からその他が消えてしまうため。
+
+    let best = null;
+    const steps = 2000;
+    for (let i = 0; i <= steps; i++) {
+      const R1 = (i / steps) * 100;
+      const r2Min = Math.max(0, maxOtherShare * (100 - R1) / (1 + maxOtherShare));
+      const r2Max = Math.min(R1, 100 - MIN_OTHER_TOTAL - R1);
+      if (r2Max < r2Min - 1e-9) continue;
+      const R2 = (c2 - cOther) <= 0 ? r2Max : r2Min;
+      const otherTotal = 100 - R1 - R2;
+      const cost = R1 * c1 + R2 * c2 + otherTotal * cOther;
+      if (!best || cost < best.cost - 1e-9) {
+        best = { R1, R2, otherTotal, cost };
+      }
+    }
+    if (!best) return null;
+
+    const newRatios = simDraft.components.map(() => 0);
+    newRatios[groups[g1Country].cheapestIdx] = best.R1;
+    newRatios[groups[g2Country].cheapestIdx] = best.R2;
+    otherGroups.forEach(g => {
+      newRatios[g.cheapestIdx] = best.otherTotal * otherShare[g.country];
+    });
+    return { newRatios };
   }
 
   function renderSimResult(product) {
