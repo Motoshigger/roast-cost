@@ -2733,7 +2733,7 @@
 
     const thead = document.createElement("thead");
     const headRow = document.createElement("tr");
-    headRow.innerHTML = `<th class="brand-col">焙煎商品</th><th>配合タイプ</th>` + months.map(m => {
+    headRow.innerHTML = `<th class="brand-col">焙煎商品</th><th>商品名2</th><th>配合タイプ</th>` + months.map(m => {
       const isCurrent = m === currentMonth;
       return `<th class="num${isCurrent ? " current-month" : ""}">${monthLabel(m)}${isCurrent ? `<span class="sub">今月</span>` : ""}</th>`;
     }).join("");
@@ -2745,7 +2745,7 @@
     const tbody = document.createElement("tbody");
     orderedProducts.forEach(p => {
       const tr = document.createElement("tr");
-      let cells = `<td class="brand-col">${p.name}</td><td><span class="badge ${badgeClass[p.type]}">${roastTypeLabel(p.type)}</span></td>`;
+      let cells = `<td class="brand-col">${p.name}</td><td class="wrap">${p.name2 || "—"}</td><td><span class="badge ${badgeClass[p.type]}">${roastTypeLabel(p.type)}</span></td>`;
       months.forEach(m => {
         const price = roastedCostMap[p.id] && roastedCostMap[p.id][m];
         const curCls = m === currentMonth ? " current-month" : "";
