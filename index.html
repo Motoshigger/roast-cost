@@ -989,6 +989,7 @@
                 <th class="wrap">商品名</th>
                 <th class="wrap">商品名2</th>
                 <th class="wrap">配合内容</th>
+                <th class="wrap">裏面表記</th>
                 <th class="num">焙煎ロス率</th>
                 <th></th>
               </tr>
@@ -1009,6 +1010,7 @@
                 <th class="wrap">商品名</th>
                 <th class="wrap">商品名2</th>
                 <th class="wrap">配合内容</th>
+                <th class="wrap">裏面表記</th>
                 <th class="num">焙煎ロス率</th>
                 <th></th>
               </tr>
@@ -1029,6 +1031,7 @@
                 <th class="wrap">商品名</th>
                 <th class="wrap">商品名2</th>
                 <th class="wrap">配合内容</th>
+                <th class="wrap">裏面表記</th>
                 <th class="num">焙煎ロス率</th>
                 <th></th>
               </tr>
@@ -3054,6 +3057,43 @@
     render();
   }
 
+  // 商品の生産国別の構成比率を返す({国名: 比率(0〜100換算前の重み)})。アフターミックスは配合先の商品の構成を再帰的にたどって合算する。
+  function getCountryComposition(product, visited) {
+    visited = visited || new Set();
+    const result = {};
+    if (visited.has(product.id)) return result; // 循環参照防止
+    visited = new Set(visited);
+    visited.add(product.id);
+
+    const totalRatio = product.components.reduce((s, c) => s + c.ratio, 0);
+    if (totalRatio <= 0) return result;
+
+    product.components.forEach(comp => {
+      const weight = comp.ratio / totalRatio;
+      if (product.type === "aftermix") {
+        const refProduct = roastedProducts.find(rp => String(rp.id) === String(comp.ref));
+        if (!refProduct) return;
+        const subComposition = getCountryComposition(refProduct, visited);
+        Object.keys(subComposition).forEach(country => {
+          result[country] = (result[country] || 0) + subComposition[country] * weight;
+        });
+      } else {
+        const country = usageToCountry(comp.ref);
+        result[country] = (result[country] || 0) + weight;
+      }
+    });
+    return result;
+  }
+
+  // 裏面表記(食品表示法対応): 生産国名を多い順に表示し、3ヶ国以上ある場合は3番目以降を「その他」にまとめる
+  function getBackLabelText(product) {
+    const composition = getCountryComposition(product);
+    const countries = Object.keys(composition).sort((a, b) => composition[b] - composition[a]);
+    if (countries.length === 0) return "―";
+    if (countries.length <= 2) return countries.join("、");
+    return `${countries[0]}、${countries[1]}、その他`;
+  }
+
   function componentSummary(p) {
     return p.components.map(c => {
       const label = p.type === "aftermix"
@@ -3085,6 +3125,7 @@
         <td class="brand wrap">${p.name}</td>
         <td class="wrap">${p.name2 || "—"}</td>
         <td class="wrap">${componentSummary(p)}</td>
+        <td class="wrap">${getBackLabelText(p)}</td>
         <td class="num">${p.roastLoss != null ? p.roastLoss + "%" : "—"}</td>
         <td class="remove" style="white-space:nowrap;">
           <button class="icon-btn" data-edit-roast="${p.id}" aria-label="編集" title="編集">✎</button>
