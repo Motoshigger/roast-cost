@@ -2264,7 +2264,7 @@
       simBulkMonths.forEach(m => {
         const v = simBulkPriceMap[usage][m];
         const curCls = m === currentMonth ? " current-month" : "";
-        cells += `<td class="cell${curCls}"><input type="number" min="0" step="1" data-bulk-usage="${usage}" data-bulk-month="${m}" value="${v != null ? fmt1(v) : ""}" placeholder="―" style="width:90px; text-align:right;"></td>`;
+        cells += `<td class="cell${curCls}"><input type="number" min="0" step="1" data-bulk-usage="${usage}" data-bulk-month="${m}" value="${v != null ? Math.round(v * 10) / 10 : ""}" placeholder="―" style="width:90px; text-align:right;"></td>`;
       });
       tr.innerHTML = cells;
       tbody.appendChild(tr);
