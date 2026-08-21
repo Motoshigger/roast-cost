@@ -1989,9 +1989,10 @@
     const { roastedCostMap } = computeRoastedCostMap();
     const components = product.components.map(c => {
       const info = simRefInfo(product.type, c.ref, month, greenCostMap, roastedCostMap);
-      return { ref: c.ref, label: info.label, ratio: c.ratio, price: info.price != null ? info.price : 0 };
+      const basePrice = info.price != null ? info.price : 0;
+      return { ref: c.ref, label: info.label, ratio: c.ratio, price: basePrice, basePrice, baseRatio: c.ratio };
     });
-    return { components, roastLoss: product.roastLoss };
+    return { components, roastLoss: product.roastLoss, baseRoastLoss: product.roastLoss };
   }
 
   function renderSimTab() {
@@ -2039,12 +2040,13 @@
     const rows = simDraft.components.map((c, idx) => `
       <tr>
         <td class="wrap">${c.label}</td>
-        <td class="num"><input type="number" min="0" max="100" step="0.1" data-sim-ratio="${idx}" value="${c.ratio}" style="width:80px; text-align:right;"></td>
-        <td class="num"><input type="number" min="0" step="1" data-sim-price="${idx}" value="${fmt1(c.price)}" style="width:110px; text-align:right;"></td>
+        <td class="num"><span class="sub">現在 ${fmt1(c.baseRatio)}%</span><input type="number" min="0" max="100" step="0.1" data-sim-ratio="${idx}" value="${c.ratio}" style="width:80px; text-align:right;"></td>
+        <td class="num"><span class="sub">現在 ¥${fmt1(c.basePrice)}</span><input type="number" min="0" step="1" data-sim-price="${idx}" value="${fmt1(c.price)}" style="width:110px; text-align:right;"></td>
       </tr>
     `).join("");
 
     body.innerHTML = `
+      <p class="hint" style="margin:0 0 10px;">下の「単価」欄に、変えたい生豆の新しい価格を入力してください。他の欄はそのままで大丈夫です。</p>
       <table class="entries-table">
         <thead>
           <tr><th>${isAftermix ? "配合する焙煎商品" : "使用用途"}</th><th class="num">配合比率(%)</th><th class="num">${isAftermix ? "原価(円/kg)" : "生豆単価(円/kg)"}</th></tr>
@@ -2053,11 +2055,11 @@
       </table>
       ${isAftermix ? "" : `
         <div class="field" style="max-width:220px; margin-top:14px;">
-          <label>焙煎ロス率(%)</label>
+          <label>焙煎ロス率(%) <span class="sub" style="display:inline;">現在 ${fmt1(simDraft.baseRoastLoss)}%</span></label>
           <input type="number" min="0" max="99" step="0.1" id="sim-roast-loss" value="${simDraft.roastLoss}">
         </div>
       `}
-      <div id="sim-result" class="uh-stats" style="margin:18px 0 0;"></div>
+      <div id="sim-result" style="margin:20px 0 0;"></div>
     `;
 
     body.querySelectorAll("[data-sim-ratio]").forEach(input => {
@@ -2109,28 +2111,38 @@
     const ratioWarn = Math.abs(totalRatio - 100) > 0.05 ? `<div class="warn" style="margin:0 0 10px;">配合比率の合計が${fmt1(totalRatio)}%です(100%になるよう調整してください)</div>` : "";
 
     if (simCost == null) {
-      resultEl.innerHTML = ratioWarn + `<span class="uh-stat-title">計算できません(単価が未入力の項目があるか、焙煎ロス率が不正です)</span>`;
+      resultEl.innerHTML = ratioWarn + `<p class="hint" style="margin:0;">計算できません(単価が未入力の項目があるか、焙煎ロス率が不正です)。</p>`;
       return;
     }
 
+    // どの生豆をいくらに変えたか、変更があったものだけ文章化する
+    const changedPrices = simDraft.components.filter(c => Math.abs(c.price - c.basePrice) > 0.01);
+    const priceChangeText = changedPrices.length > 0
+      ? changedPrices.map(c => `${c.label}を¥${fmt1(c.basePrice)}→¥${fmt1(c.price)}/kg`).join("、")
+      : null;
+    const changedRatios = simDraft.components.some(c => Math.abs(c.ratio - c.baseRatio) > 0.05);
+    const changedLoss = Math.abs(simDraft.roastLoss - simDraft.baseRoastLoss) > 0.05;
+
+    const changeParts = [];
+    if (priceChangeText) changeParts.push(priceChangeText);
+    if (changedRatios) changeParts.push("配合比率を変更");
+    if (changedLoss) changeParts.push(`焙煎ロス率を${fmt1(simDraft.baseRoastLoss)}%→${fmt1(simDraft.roastLoss)}%に変更`);
+    const conditionText = changeParts.length > 0 ? changeParts.join("、") : "現在の実績と同じ条件";
+
     const diff = actualCost != null ? simCost - actualCost : null;
     const diffPct = actualCost != null && actualCost !== 0 ? (diff / actualCost) * 100 : null;
-    const diffColor = diff == null ? "" : diff > 0 ? "color:var(--danger);" : diff < 0 ? "color:var(--accent-ink);" : "";
+    const diffColor = diff == null ? "var(--ink)" : diff > 0 ? "var(--danger)" : diff < 0 ? "var(--accent-ink)" : "var(--ink)";
+    const diffText = diff != null
+      ? `実績(¥${fmt(actualCost)}/kg)から <strong style="color:${diffColor};">${diff >= 0 ? "+" : ""}${fmt1(diff)}円/kg(${diffPct >= 0 ? "+" : ""}${fmt1(diffPct)}%)</strong>`
+      : "(実績データが無いため比較できません)";
 
     resultEl.innerHTML = ratioWarn + `
-      <span class="uh-stat-title">${product.name} の試算結果(${monthLabel(month)}基準)</span>
-      <div class="uh-stat-block">
-        <span class="uh-stat-label">実績の焙煎後原価</span>
-        <span class="uh-stat-value">${actualCost != null ? "¥" + fmt(actualCost) + "/kg" : "―"}</span>
-      </div>
-      <div class="uh-stat-block">
-        <span class="uh-stat-label">シミュレーション後の原価</span>
-        <span class="uh-stat-value">¥${fmt(simCost)}/kg</span>
-      </div>
-      <div class="uh-stat-block">
-        <span class="uh-stat-label">差額(シミュレーション − 実績)</span>
-        <span class="uh-stat-value" style="${diffColor}">${diff != null ? (diff >= 0 ? "+" : "") + fmt1(diff) + "円/kg" : "―"}</span>
-        <span class="uh-stat-avg">${diffPct != null ? (diffPct >= 0 ? "+" : "") + fmt1(diffPct) + "%" : ""}</span>
+      <div class="card">
+        <p style="margin:0 0 10px; font-size:13px; color:var(--ink-soft);">${conditionText}にすると、</p>
+        <p style="margin:0; font-size:22px; font-weight:700;">
+          ${product.name}の原価は <span style="color:var(--money);">¥${fmt(simCost)}/kg</span> になります
+        </p>
+        <p style="margin:8px 0 0; font-size:13px;">${diffText}</p>
       </div>
     `;
   }
