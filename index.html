@@ -887,20 +887,24 @@
 
     <div class="tab-panel form-panel" data-tab-panel="sales-contract" hidden>
       <h2><span class="badge contract">生豆販売契約</span>お客様向けの生豆販売契約を追加</h2>
-      <p class="hint" style="margin:0 0 10px;">商社との仕入契約と同じように、生豆販売先のお客様と結んだ契約を登録します。登録した数量は、対象の仕入契約の残数から即座に差し引かれます(「このお客様向けに確保済み」という扱いです)。対象期間は、紐づけた仕入契約の期間にあわせて自動表示されます。</p>
+      <p class="hint" style="margin:0 0 10px;">お客様と結んだ生豆販売契約を、使用用途(銘柄)単位で登録します。登録した数量は、同じ使用用途の仕入契約の中から、契約終了月が早いもの(=先に無くなるもの)から順に自動で割り当てて差し引かれます。1つの仕入契約だけでなく、複数の仕入契約にまたがって割り当てられる場合もあります(販売契約が複数月にまたがる場合など)。実際にどの仕入契約から充当されているかは、登録後に一覧で確認できます。</p>
       <div class="form-grid">
-        <div class="field">
-          <label for="sc-country-filter">生産国で絞り込み</label>
-          <select id="sc-country-filter"></select>
-        </div>
         <div class="field span2">
-          <label for="sc-contract">対象の仕入契約</label>
-          <select id="sc-contract"></select>
-          <p class="hint" id="sc-contract-info" style="margin-top:2px;"></p>
+          <label for="sc-usage">使用用途(銘柄)</label>
+          <select id="sc-usage"></select>
+          <p class="hint" id="sc-usage-info" style="margin-top:2px;"></p>
         </div>
         <div class="field span2">
           <label for="sc-customer">販売先(お客様名)</label>
           <input type="text" id="sc-customer" placeholder="例: ◯◯珈琲店様">
+        </div>
+        <div class="field">
+          <label for="sc-start">開始月</label>
+          <input type="text" inputmode="numeric" class="month-input" id="sc-start" placeholder="202610">
+        </div>
+        <div class="field">
+          <label for="sc-end">終了月</label>
+          <input type="text" inputmode="numeric" class="month-input" id="sc-end" placeholder="202612">
         </div>
         <div class="field">
           <label for="sc-bags">契約数量(袋)</label>
@@ -927,12 +931,12 @@
           <thead>
             <tr>
               <th class="wrap">販売先</th>
-              <th class="wrap">生産国/商品名</th>
-              <th>対象仕入契約</th>
+              <th class="wrap">使用用途</th>
               <th>対象期間</th>
               <th class="num">契約数量(袋)</th>
               <th class="num">出荷済み(袋)</th>
               <th class="num">販売単価</th>
+              <th class="wrap">充当元の仕入契約</th>
               <th class="wrap">備考</th>
               <th></th>
             </tr>
@@ -2773,14 +2777,54 @@
     render();
   }
 
-  function usedBags(contract) {
+  // 入荷処理・契約生豆からの出荷・残数引継ぎ分のみを使用数として計算する(生豆販売契約の充当分は含まない)
+  function nonSalesUsedBags(contract) {
     const arrivalsUsed = arrivals.filter(a => a.contractId === contract.id).reduce((sum, a) => sum + a.bags, 0);
     const shipmentsUsed = shipments.filter(s => s.contractId === contract.id).reduce((sum, s) => sum + s.bags, 0);
-    const salesContractsUsed = salesContracts.filter(sc => sc.contractId === contract.id).reduce((sum, sc) => sum + sc.bags, 0);
     const openingUsed = contract.openingRemaining !== null && contract.openingRemaining !== undefined
       ? contract.bags - contract.openingRemaining
       : 0;
-    return openingUsed + arrivalsUsed + shipmentsUsed + salesContractsUsed;
+    return openingUsed + arrivalsUsed + shipmentsUsed;
+  }
+
+  // 使用用途ごとに、生豆販売契約の数量を「契約終了月が早い仕入契約」から順に自動で割り当てる(FIFO)。
+  // 1件の販売契約が複数の仕入契約にまたがって充当されることもある。
+  // 戻り値: { byContract: {仕入契約ID: 充当された袋数}, bySalesContract: {販売契約ID: {allocated, shortfall, breakdown: [{contractId, bags}]}} }
+  function computeSalesAllocations() {
+    const byContract = {};
+    const bySalesContract = {};
+    const usages = new Set(salesContracts.map(sc => sc.usage));
+
+    usages.forEach(usage => {
+      const queue = entries
+        .filter(e => e.kind === "contract" && e.usage === usage)
+        .sort((a, b) => a.end.localeCompare(b.end))
+        .map(c => ({ contract: c, remaining: c.bags - nonSalesUsedBags(c) }))
+        .filter(item => item.remaining > 0.001);
+
+      const scForUsage = salesContracts.filter(sc => sc.usage === usage);
+      scForUsage.forEach(sc => {
+        let need = sc.bags;
+        const breakdown = [];
+        for (const item of queue) {
+          if (need <= 0.001) break;
+          if (item.remaining <= 0.001) continue;
+          const take = Math.min(need, item.remaining);
+          item.remaining -= take;
+          need -= take;
+          byContract[item.contract.id] = (byContract[item.contract.id] || 0) + take;
+          breakdown.push({ contractId: item.contract.id, bags: take });
+        }
+        bySalesContract[sc.id] = { allocated: sc.bags - need, shortfall: need, breakdown };
+      });
+    });
+
+    return { byContract, bySalesContract };
+  }
+
+  function usedBags(contract) {
+    const salesUsed = computeSalesAllocations().byContract[contract.id] || 0;
+    return nonSalesUsedBags(contract) + salesUsed;
   }
 
   function contractLabel(c) {
@@ -2946,55 +2990,60 @@
 
   // ==================== 生豆販売契約(お客様向け) ====================
   // 対象の仕入契約を選ぶ候補は、まだ残数がある契約(編集中のものは除外しない)に絞る
+  // 使用用途の、現在の全仕入契約の合計残数(袋)を返す
+  function totalRemainingBagsForUsage(usage) {
+    return entries
+      .filter(e => e.kind === "contract" && e.usage === usage)
+      .reduce((s, c) => s + Math.max(0, c.bags - nonSalesUsedBags(c)), 0);
+  }
+
   function refreshSalesContractSelect() {
-    const countryFilterSel = document.getElementById("sc-country-filter");
-    const allContracts = entries.filter(e => e.kind === "contract" &&
-      (e.bags - usedBags(e) > 0.001 || (editingSalesContractId !== null && salesContracts.find(sc => sc.id === editingSalesContractId && sc.contractId === e.id))));
-    const countries = [...new Set(allContracts.map(c => c.country))].sort((a, b) => a.localeCompare(b, "ja"));
-    const prevCountry = countryFilterSel.value;
-    countryFilterSel.innerHTML = `<option value="">すべての生産国</option>` +
-      countries.map(country => `<option value="${country}">${country}</option>`).join("");
-    if (countries.includes(prevCountry)) countryFilterSel.value = prevCountry;
-
-    const selectedCountry = countryFilterSel.value;
-    const contracts = selectedCountry ? allContracts.filter(c => c.country === selectedCountry) : allContracts;
-
-    const sel = document.getElementById("sc-contract");
+    const sel = document.getElementById("sc-usage");
     const prevValue = sel.value;
-    sel.innerHTML = contracts.length === 0
-      ? `<option value="">${selectedCountry ? "この生産国の契約がありません" : "登録済みの契約がありません"}</option>`
-      : contracts.map(c => `<option value="${c.id}">${contractLabel(c)}</option>`).join("");
-    if (contracts.some(c => String(c.id) === prevValue)) sel.value = prevValue;
+    const usages = uniqueUsages();
+    sel.innerHTML = usages.length === 0
+      ? `<option value="">契約生豆に使用用途が登録されていません</option>`
+      : usages.map(u => `<option value="${u}">${u}</option>`).join("");
+    if (usages.includes(prevValue)) sel.value = prevValue;
     updateSalesContractInfo();
   }
 
   function updateSalesContractInfo() {
-    const sel = document.getElementById("sc-contract");
-    const readout = document.getElementById("sc-contract-info");
-    const contract = entries.find(e => e.id === Number(sel.value) && e.kind === "contract");
-    if (!contract) { readout.textContent = ""; return; }
+    const sel = document.getElementById("sc-usage");
+    const readout = document.getElementById("sc-usage-info");
+    const usage = sel.value;
+    if (!usage) { readout.textContent = ""; return; }
     const alreadyReserved = salesContracts
-      .filter(sc => sc.contractId === contract.id && sc.id !== editingSalesContractId)
+      .filter(sc => sc.usage === usage && sc.id !== editingSalesContractId)
       .reduce((s, sc) => s + sc.bags, 0);
-    const availableNow = contract.bags - usedBags(contract) + (editingSalesContractId !== null ? (salesContracts.find(sc => sc.id === editingSalesContractId)?.bags || 0) : 0);
-    readout.textContent = `対象期間: ${monthLabel(contract.start)} 〜 ${monthLabel(contract.end)}(仕入先: ${contract.supplier || "—"}、現在この契約で販売契約可能な残数: ${fmt(availableNow)}袋)`;
+    const total = totalRemainingBagsForUsage(usage);
+    readout.textContent = `この使用用途の仕入契約の合計残数: ${fmt(total)}袋(うち既存の販売契約で確保済み: ${fmt(alreadyReserved)}袋)`;
   }
 
   function addSalesContract() {
-    const contractId = Number(document.getElementById("sc-contract").value);
+    const usage = document.getElementById("sc-usage").value;
     const customer = document.getElementById("sc-customer").value.trim();
+    const start = document.getElementById("sc-start").value;
+    const end = document.getElementById("sc-end").value;
     const bags = Number(document.getElementById("sc-bags").value);
     const priceRaw = document.getElementById("sc-price").value;
     const price = priceRaw === "" ? null : Number(priceRaw);
     const note = document.getElementById("sc-note").value.trim();
     const errEl = document.getElementById("sc-error");
-    const contract = entries.find(e => e.id === contractId && e.kind === "contract");
-    if (!contract) {
-      errEl.textContent = "対象の仕入契約を選択してください。";
+    if (!usage) {
+      errEl.textContent = "使用用途を選択してください。";
       return;
     }
-    if (!customer || !bags) {
-      errEl.textContent = "販売先・契約数量を入力してください。";
+    if (!customer || !start || !end || !bags) {
+      errEl.textContent = "販売先・開始月・終了月・契約数量を入力してください。";
+      return;
+    }
+    if (!/^\d{4}-\d{2}$/.test(start) || !/^\d{4}-\d{2}$/.test(end)) {
+      errEl.textContent = "開始月・終了月はYYYYMMの形式で入力してください(例: 202610)。";
+      return;
+    }
+    if (start > end) {
+      errEl.textContent = "終了月は開始月以降にしてください。";
       return;
     }
     errEl.textContent = "";
@@ -3002,17 +3051,19 @@
     if (editingSalesContractId !== null) {
       const idx = salesContracts.findIndex(sc => sc.id === editingSalesContractId);
       if (idx !== -1) {
-        salesContracts[idx] = { id: editingSalesContractId, contractId, customer, bags, price, note };
+        salesContracts[idx] = { id: editingSalesContractId, usage, customer, start, end, bags, price, note };
       }
       editingSalesContractId = null;
       document.getElementById("sc-add").textContent = "＋ 生豆販売契約を追加";
       document.getElementById("sc-cancel-edit").style.display = "none";
-      logChange(`生豆販売契約を編集: ${contract.brand}　${customer}　${bags}袋`);
+      logChange(`生豆販売契約を編集: ${usage}　${customer}　${bags}袋`);
     } else {
-      salesContracts.push({ id: nextSalesContractId++, contractId, customer, bags, price, note });
-      logChange(`生豆販売契約を追加: ${contract.brand}　${customer}　${bags}袋`);
+      salesContracts.push({ id: nextSalesContractId++, usage, customer, start, end, bags, price, note });
+      logChange(`生豆販売契約を追加: ${usage}　${customer}　${bags}袋`);
     }
     document.getElementById("sc-customer").value = "";
+    document.getElementById("sc-start").value = "";
+    document.getElementById("sc-end").value = "";
     document.getElementById("sc-bags").value = "";
     document.getElementById("sc-price").value = "";
     document.getElementById("sc-note").value = "";
@@ -3024,9 +3075,11 @@
     if (!sc) return;
     editingSalesContractId = id;
     refreshSalesContractSelect();
-    document.getElementById("sc-contract").value = String(sc.contractId);
+    document.getElementById("sc-usage").value = sc.usage;
     updateSalesContractInfo();
     document.getElementById("sc-customer").value = sc.customer;
+    document.getElementById("sc-start").value = sc.start;
+    document.getElementById("sc-end").value = sc.end;
     document.getElementById("sc-bags").value = sc.bags;
     document.getElementById("sc-price").value = sc.price != null ? sc.price : "";
     document.getElementById("sc-note").value = sc.note || "";
@@ -3042,6 +3095,8 @@
   function cancelSalesContractEdit() {
     editingSalesContractId = null;
     document.getElementById("sc-customer").value = "";
+    document.getElementById("sc-start").value = "";
+    document.getElementById("sc-end").value = "";
     document.getElementById("sc-bags").value = "";
     document.getElementById("sc-price").value = "";
     document.getElementById("sc-note").value = "";
@@ -3055,8 +3110,7 @@
     const target = salesContracts.find(sc => sc.id === id);
     salesContracts = salesContracts.filter(sc => sc.id !== id);
     if (target) {
-      const contract = entries.find(e => e.id === target.contractId);
-      logChange(`生豆販売契約を削除: ${contract ? contract.brand : "(契約削除済み)"}　${target.customer}　${target.bags}袋`);
+      logChange(`生豆販売契約を削除: ${target.usage}　${target.customer}　${target.bags}袋`);
     }
     if (editingSalesContractId === id) cancelSalesContractEdit();
     render();
@@ -3071,17 +3125,27 @@
       return;
     }
     empty.style.display = "none";
+    const { bySalesContract } = computeSalesAllocations();
     salesContracts.forEach(sc => {
-      const contract = entries.find(e => e.id === sc.contractId);
+      const alloc = bySalesContract[sc.id] || { allocated: 0, shortfall: sc.bags, breakdown: [] };
+      const breakdownText = alloc.breakdown.length > 0
+        ? alloc.breakdown.map(b => {
+            const c = entries.find(e => e.id === b.contractId);
+            return c ? `${contractLabel(c)}: ${fmt(b.bags)}袋` : `(削除済み契約): ${fmt(b.bags)}袋`;
+          }).join("、")
+        : "—";
+      const shortfallWarning = alloc.shortfall > 0.001
+        ? `<div class="warn" style="margin-top:4px; padding:4px 8px; font-size:11px;">仕入契約の残数不足で${fmt(alloc.shortfall)}袋分が未充当です</div>`
+        : "";
       const tr = document.createElement("tr");
       tr.innerHTML = `
         <td class="wrap">${sc.customer}</td>
-        <td class="wrap">${contract ? `${contract.country} ${contract.product}` : "(削除済み契約)"}</td>
-        <td>${contract ? (contract.contractNo || "—") : "—"}</td>
-        <td>${contract ? `${monthLabel(contract.start)} 〜 ${monthLabel(contract.end)}` : "—"}</td>
+        <td class="wrap">${sc.usage}</td>
+        <td>${monthLabel(sc.start)} 〜 ${monthLabel(sc.end)}</td>
         <td class="num">${fmt(sc.bags)}</td>
         <td class="num">${fmt(shippedBagsForSalesContract(sc.id))}</td>
         <td class="num">${sc.price != null ? "¥" + fmt(sc.price) + "/kg" : "—"}</td>
+        <td class="wrap">${breakdownText}${shortfallWarning}</td>
         <td class="wrap">${sc.note || "—"}</td>
         <td class="remove" style="white-space:nowrap;">
           <button class="icon-btn" data-edit-sales-contract="${sc.id}" aria-label="編集" title="編集">✎</button>
@@ -3105,9 +3169,7 @@
   }
 
   function salesContractLabel(sc) {
-    const contract = entries.find(e => e.id === sc.contractId);
-    const productPart = contract ? `${contract.country} ${contract.product}` : "(削除済み契約)";
-    return `${sc.customer}　${productPart}(${fmt(sc.bags)}袋契約)`;
+    return `${sc.customer}　${sc.usage}(${monthLabel(sc.start)}〜${monthLabel(sc.end)}、${fmt(sc.bags)}袋契約)`;
   }
 
   function refreshContractedShipmentSelect() {
@@ -3977,8 +4039,7 @@
   document.getElementById("sh-country-filter").addEventListener("change", refreshShipmentContractSelect);
   document.getElementById("sh-contract").addEventListener("change", updateShipmentContractSupplierReadout);
   document.getElementById("sc-add").addEventListener("click", addSalesContract);
-  document.getElementById("sc-country-filter").addEventListener("change", refreshSalesContractSelect);
-  document.getElementById("sc-contract").addEventListener("change", updateSalesContractInfo);
+  document.getElementById("sc-usage").addEventListener("change", updateSalesContractInfo);
   document.getElementById("sc-cancel-edit").addEventListener("click", cancelSalesContractEdit);
   document.getElementById("cs-add").addEventListener("click", addContractedShipment);
   document.getElementById("cs-sales-contract").addEventListener("change", updateContractedShipmentInfo);
