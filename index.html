@@ -716,7 +716,8 @@
       <div class="tabs-row">
         <span class="tab-group-label">生豆販売管理入力</span>
         <button class="tab-btn" data-tab="sales-contract" role="tab" aria-selected="false">生豆販売契約を追加</button>
-        <button class="tab-btn" data-tab="shipment" role="tab" aria-selected="false">契約生豆出荷処理</button>
+        <button class="tab-btn" data-tab="contracted-shipment" role="tab" aria-selected="false">契約生豆出荷処理</button>
+        <button class="tab-btn" data-tab="shipment" role="tab" aria-selected="false">契約生豆から出荷</button>
       </div>
       <div class="tabs-row">
         <span class="tab-group-label">契約管理</span>
@@ -930,6 +931,7 @@
               <th>対象仕入契約</th>
               <th>対象期間</th>
               <th class="num">契約数量(袋)</th>
+              <th class="num">出荷済み(袋)</th>
               <th class="num">販売単価</th>
               <th class="wrap">備考</th>
               <th></th>
@@ -941,9 +943,53 @@
       </div>
     </div>
 
+    <div class="tab-panel" data-tab-panel="contracted-shipment" hidden>
+      <div class="form-panel" style="padding-bottom:6px;">
+        <p class="hint" style="margin:0 0 10px;">お客様と生豆販売契約を結んでいる分の、実際の出荷を記録します。この記録は仕入契約の残数には影響しません(その分は販売契約の登録時点ですでに差し引かれているため)。あくまで、どのお客様にどれだけ出荷済みかを管理するための記録です。</p>
+        <div class="form-grid">
+          <div class="field span2">
+            <label for="cs-sales-contract">対象の生豆販売契約</label>
+            <select id="cs-sales-contract"></select>
+            <p class="hint" id="cs-sales-contract-info" style="margin-top:2px;"></p>
+          </div>
+          <div class="field">
+            <label for="cs-date">出荷日</label>
+            <input type="date" id="cs-date">
+          </div>
+          <div class="field">
+            <label for="cs-bags">出荷袋数</label>
+            <input type="number" id="cs-bags" min="0" step="1" placeholder="2">
+          </div>
+          <div class="field span2">
+            <label for="cs-recorder">入力者名</label>
+            <input type="text" id="cs-recorder" placeholder="例: 山田">
+          </div>
+        </div>
+        <p class="error" id="cs-error"></p>
+        <button class="btn primary" id="cs-add">出荷を記録</button>
+      </div>
+      <div class="section-heading tight"><h2>契約生豆出荷履歴</h2></div>
+      <div class="table-wrap">
+        <table class="entries-table">
+          <thead>
+            <tr>
+              <th class="wrap">販売先</th>
+              <th class="wrap">生産国/商品名</th>
+              <th>出荷日</th>
+              <th class="num">出荷袋数</th>
+              <th>入力者</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="contracted-shipments-body"></tbody>
+        </table>
+        <div class="empty" id="contracted-shipments-empty" style="display:none;">契約生豆出荷履歴はまだありません。</div>
+      </div>
+    </div>
+
     <div class="tab-panel" data-tab-panel="shipment" hidden>
       <div class="form-panel" style="padding-bottom:6px;">
-        <p class="hint" style="margin:0 0 10px;">契約生豆を、焙煎せず生豆のまま販売用として出荷した場合に記録します。ここで記録した袋数も、契約の残数からその分差し引かれます。</p>
+        <p class="hint" style="margin:0 0 10px;">お客様との生豆販売契約は結んでいないが、弊社の仕入契約の残数から生豆のまま出荷する場合に記録します。ここで記録した袋数も、仕入契約の残数からその分差し引かれます。(お客様と生豆販売契約を結んでいる場合は「契約生豆出荷処理」タブをご利用ください)</p>
         <div class="form-grid">
           <div class="field">
             <label for="sh-country-filter">生産国で絞り込み</label>
@@ -1318,10 +1364,12 @@
   let arrivals = [];
   let shipments = [];
   let salesContracts = [];
+  let contractedShipments = [];
   let nextId = 1;
   let nextArrivalId = 1;
   let nextShipmentId = 1;
   let nextSalesContractId = 1;
+  let nextContractedShipmentId = 1;
   let editingSalesContractId = null;
   let roastedProducts = [];
   let nextRoastId = 1;
@@ -3032,6 +3080,7 @@
         <td>${contract ? (contract.contractNo || "—") : "—"}</td>
         <td>${contract ? `${monthLabel(contract.start)} 〜 ${monthLabel(contract.end)}` : "—"}</td>
         <td class="num">${fmt(sc.bags)}</td>
+        <td class="num">${fmt(shippedBagsForSalesContract(sc.id))}</td>
         <td class="num">${sc.price != null ? "¥" + fmt(sc.price) + "/kg" : "—"}</td>
         <td class="wrap">${sc.note || "—"}</td>
         <td class="remove" style="white-space:nowrap;">
@@ -3046,6 +3095,100 @@
     });
     body.querySelectorAll("[data-edit-sales-contract]").forEach(btn => {
       btn.addEventListener("click", () => startEditSalesContract(Number(btn.dataset.editSalesContract)));
+    });
+  }
+
+  // ==================== 契約生豆出荷処理(生豆販売契約に対する実際の出荷記録) ====================
+  // この記録は仕入契約の残数には影響しない(販売契約の登録時点ですでに差し引かれているため)。
+  function shippedBagsForSalesContract(salesContractId) {
+    return contractedShipments.filter(cs => cs.salesContractId === salesContractId).reduce((s, cs) => s + cs.bags, 0);
+  }
+
+  function salesContractLabel(sc) {
+    const contract = entries.find(e => e.id === sc.contractId);
+    const productPart = contract ? `${contract.country} ${contract.product}` : "(削除済み契約)";
+    return `${sc.customer}　${productPart}(${fmt(sc.bags)}袋契約)`;
+  }
+
+  function refreshContractedShipmentSelect() {
+    const sel = document.getElementById("cs-sales-contract");
+    const prevValue = sel.value;
+    sel.innerHTML = salesContracts.length === 0
+      ? `<option value="">登録済みの生豆販売契約がありません</option>`
+      : salesContracts.map(sc => `<option value="${sc.id}">${salesContractLabel(sc)}</option>`).join("");
+    if (salesContracts.some(sc => String(sc.id) === prevValue)) sel.value = prevValue;
+    updateContractedShipmentInfo();
+  }
+
+  function updateContractedShipmentInfo() {
+    const sel = document.getElementById("cs-sales-contract");
+    const readout = document.getElementById("cs-sales-contract-info");
+    const sc = salesContracts.find(x => x.id === Number(sel.value));
+    if (!sc) { readout.textContent = ""; return; }
+    const shipped = shippedBagsForSalesContract(sc.id);
+    readout.textContent = `契約数量: ${fmt(sc.bags)}袋 / 出荷済み: ${fmt(shipped)}袋 / 残り: ${fmt(sc.bags - shipped)}袋`;
+  }
+
+  function addContractedShipment() {
+    const salesContractId = Number(document.getElementById("cs-sales-contract").value);
+    const date = document.getElementById("cs-date").value;
+    const bags = Number(document.getElementById("cs-bags").value);
+    const recorder = document.getElementById("cs-recorder").value.trim();
+    const errEl = document.getElementById("cs-error");
+    const sc = salesContracts.find(x => x.id === salesContractId);
+    if (!sc) {
+      errEl.textContent = "対象の生豆販売契約を選択してください。";
+      return;
+    }
+    if (!date || !bags || !recorder) {
+      errEl.textContent = "出荷日・出荷袋数・入力者名を入力してください。";
+      return;
+    }
+    errEl.textContent = "";
+    contractedShipments.push({ id: nextContractedShipmentId++, salesContractId, date, bags, recorder });
+    logChange(`契約生豆出荷を追加: ${sc.customer}　${bags}袋(${date}、記録者:${recorder})`);
+    document.getElementById("cs-date").value = "";
+    document.getElementById("cs-bags").value = "";
+    document.getElementById("cs-recorder").value = "";
+    render();
+  }
+
+  function removeContractedShipment(id) {
+    const target = contractedShipments.find(cs => cs.id === id);
+    contractedShipments = contractedShipments.filter(cs => cs.id !== id);
+    if (target) {
+      const sc = salesContracts.find(x => x.id === target.salesContractId);
+      logChange(`契約生豆出荷を削除: ${sc ? sc.customer : "(販売契約削除済み)"}　${target.bags}袋(${target.date})`);
+    }
+    render();
+  }
+
+  function renderContractedShipmentHistory() {
+    const body = document.getElementById("contracted-shipments-body");
+    const empty = document.getElementById("contracted-shipments-empty");
+    body.innerHTML = "";
+    if (contractedShipments.length === 0) {
+      empty.style.display = "block";
+      return;
+    }
+    empty.style.display = "none";
+    const sorted = [...contractedShipments].sort((a, b) => a.date.localeCompare(b.date));
+    sorted.forEach(cs => {
+      const sc = salesContracts.find(x => x.id === cs.salesContractId);
+      const contract = sc ? entries.find(e => e.id === sc.contractId) : null;
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td class="wrap">${sc ? sc.customer : "(販売契約削除済み)"}</td>
+        <td class="wrap">${contract ? `${contract.country} ${contract.product}` : "—"}</td>
+        <td>${cs.date}</td>
+        <td class="num">${fmt(cs.bags)}</td>
+        <td>${cs.recorder}</td>
+        <td class="remove"><button class="icon-btn" data-remove-contracted-shipment="${cs.id}" aria-label="削除" title="削除">✕</button></td>
+      `;
+      body.appendChild(tr);
+    });
+    body.querySelectorAll("[data-remove-contracted-shipment]").forEach(btn => {
+      btn.addEventListener("click", () => removeContractedShipment(Number(btn.dataset.removeContractedShipment)));
     });
   }
 
@@ -3708,7 +3851,7 @@
 
   function saveStateLocal() {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({ entries, arrivals, shipments, salesContracts, nextId, nextArrivalId, nextShipmentId, nextSalesContractId, roastedProducts, nextRoastId, changeLog, historicalUsageKg }));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ entries, arrivals, shipments, salesContracts, contractedShipments, nextId, nextArrivalId, nextShipmentId, nextSalesContractId, nextContractedShipmentId, roastedProducts, nextRoastId, changeLog, historicalUsageKg }));
     } catch (e) { /* storage unavailable, ignore */ }
   }
 
@@ -3730,10 +3873,12 @@
     arrivals = data.arrivals || [];
     shipments = data.shipments || [];
     salesContracts = data.salesContracts || [];
+    contractedShipments = data.contractedShipments || [];
     nextId = data.nextId || (Math.max(0, ...entries.map(e => e.id)) + 1);
     nextArrivalId = data.nextArrivalId || (Math.max(0, ...arrivals.map(a => a.id)) + 1);
     nextShipmentId = data.nextShipmentId || (Math.max(0, ...shipments.map(s => s.id)) + 1);
     nextSalesContractId = data.nextSalesContractId || (Math.max(0, ...salesContracts.map(s => s.id)) + 1);
+    nextContractedShipmentId = data.nextContractedShipmentId || (Math.max(0, ...contractedShipments.map(s => s.id)) + 1);
     roastedProducts = data.roastedProducts || [];
     nextRoastId = data.nextRoastId || (Math.max(0, ...roastedProducts.map(p => p.id)) + 1);
     changeLog = data.changeLog || [];
@@ -3783,6 +3928,8 @@
     renderShipmentHistory();
     refreshSalesContractSelect();
     renderSalesContracts();
+    refreshContractedShipmentSelect();
+    renderContractedShipmentHistory();
     renderComponentRows();
     renderRoastProducts();
     renderRoastMatrix();
@@ -3794,7 +3941,7 @@
   }
 
   function saveToFirestore() {
-    const state = { entries, arrivals, shipments, salesContracts, nextId, nextArrivalId, nextShipmentId, nextSalesContractId, roastedProducts, nextRoastId, changeLog, historicalUsageKg };
+    const state = { entries, arrivals, shipments, salesContracts, contractedShipments, nextId, nextArrivalId, nextShipmentId, nextSalesContractId, nextContractedShipmentId, roastedProducts, nextRoastId, changeLog, historicalUsageKg };
     ledgerDocRef.set(state).then(() => {
       setSyncStatus("");
     }).catch(err => {
@@ -3833,6 +3980,8 @@
   document.getElementById("sc-country-filter").addEventListener("change", refreshSalesContractSelect);
   document.getElementById("sc-contract").addEventListener("change", updateSalesContractInfo);
   document.getElementById("sc-cancel-edit").addEventListener("click", cancelSalesContractEdit);
+  document.getElementById("cs-add").addEventListener("click", addContractedShipment);
+  document.getElementById("cs-sales-contract").addEventListener("change", updateContractedShipmentInfo);
 
   document.getElementById("r-add").addEventListener("click", addRoastProduct);
   document.getElementById("r-add-component").addEventListener("click", () => {
@@ -3877,7 +4026,7 @@
       document.querySelectorAll(".tab-panel").forEach(panel => {
         panel.hidden = panel.dataset.tabPanel !== target;
       });
-      document.getElementById("entries-panel").hidden = target === "balance" || target === "arrival" || target === "shipment" || target === "sales-contract" || target === "matrix" || target === "roast" || target === "roast-matrix" || target === "usage-history" || target === "forecast" || target === "payment" || target === "payment-gap" || target === "simulation" || target === "history";
+      document.getElementById("entries-panel").hidden = target === "balance" || target === "arrival" || target === "shipment" || target === "sales-contract" || target === "contracted-shipment" || target === "matrix" || target === "roast" || target === "roast-matrix" || target === "usage-history" || target === "forecast" || target === "payment" || target === "payment-gap" || target === "simulation" || target === "history";
       if (target === "simulation") renderSimTab();
       if (target === "roast") renderComponentRows();
       if (target === "usage-history") {
