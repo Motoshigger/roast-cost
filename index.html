@@ -337,6 +337,32 @@
     min-height: 14px;
   }
 
+  .source-type-toggle {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .source-type-option {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 600;
+    font-size: 16px;
+    padding: 14px 22px;
+    border: 2px solid var(--line);
+    border-radius: 10px;
+    background: var(--surface-raised);
+    cursor: pointer;
+    transition: border-color .15s, background .15s, color .15s;
+  }
+  .source-type-option input { width: 18px; height: 18px; accent-color: var(--accent); }
+  .source-type-option.selected {
+    border-color: var(--accent);
+    background: var(--accent);
+    color: var(--surface);
+  }
+  .source-type-option.selected input { accent-color: var(--surface); }
+
   .table-wrap {
     overflow-x: auto;
     border-radius: 14px;
@@ -891,9 +917,9 @@
       <div class="form-grid">
         <div class="field span2">
           <label>区分</label>
-          <div style="display:flex; gap:18px; align-items:center; flex-wrap:wrap; padding-top:4px;">
-            <label style="display:flex; gap:5px; align-items:center; font-weight:400;"><input type="radio" name="sc-source-type" id="sc-source-internal" value="internal" checked> 弊社契約生豆から成約</label>
-            <label style="display:flex; gap:5px; align-items:center; font-weight:400;"><input type="radio" name="sc-source-type" id="sc-source-external" value="external"> 弊社契約生豆以外で契約(別途調達)</label>
+          <div class="source-type-toggle">
+            <label class="source-type-option selected" id="sc-source-internal-label"><input type="radio" name="sc-source-type" id="sc-source-internal" value="internal" checked> 弊社契約生豆から成約</label>
+            <label class="source-type-option" id="sc-source-external-label"><input type="radio" name="sc-source-type" id="sc-source-external" value="external"> 弊社契約生豆以外で契約(別途調達)</label>
           </div>
         </div>
         <div class="field span2" id="sc-usage-field">
@@ -3048,6 +3074,8 @@
     const isExternal = currentSalesContractSourceType() === "external";
     document.getElementById("sc-usage-field").style.display = isExternal ? "none" : "";
     document.getElementById("sc-usage-free-field").style.display = isExternal ? "" : "none";
+    document.getElementById("sc-source-internal-label").classList.toggle("selected", !isExternal);
+    document.getElementById("sc-source-external-label").classList.toggle("selected", isExternal);
   }
 
   function addSalesContract() {
