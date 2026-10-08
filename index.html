@@ -887,12 +887,23 @@
 
     <div class="tab-panel form-panel" data-tab-panel="sales-contract" hidden>
       <h2><span class="badge contract">生豆販売契約</span>お客様向けの生豆販売契約を追加</h2>
-      <p class="hint" style="margin:0 0 10px;">お客様と結んだ生豆販売契約を、使用用途(銘柄)単位で登録します。登録した数量は、同じ使用用途の仕入契約の中から、契約終了月が早いもの(=先に無くなるもの)から順に自動で割り当てて差し引かれます。1つの仕入契約だけでなく、複数の仕入契約にまたがって割り当てられる場合もあります(販売契約が複数月にまたがる場合など)。実際にどの仕入契約から充当されているかは、登録後に一覧で確認できます。</p>
+      <p class="hint" style="margin:0 0 10px;">お客様と結んだ生豆販売契約を登録します。「弊社契約生豆から成約」の場合、登録した数量は、同じ使用用途の仕入契約の中から、契約終了月が早いもの(=先に無くなるもの)から順に自動で割り当てて差し引かれます(複数の仕入契約にまたがる場合もあります)。「弊社契約生豆以外で契約」の場合は、弊社の仕入契約残数とは関係なく(別途調達する前提で)記録のみ行い、仕入契約の残数には影響しません。</p>
       <div class="form-grid">
         <div class="field span2">
+          <label>区分</label>
+          <div style="display:flex; gap:18px; align-items:center; flex-wrap:wrap; padding-top:4px;">
+            <label style="display:flex; gap:5px; align-items:center; font-weight:400;"><input type="radio" name="sc-source-type" id="sc-source-internal" value="internal" checked> 弊社契約生豆から成約</label>
+            <label style="display:flex; gap:5px; align-items:center; font-weight:400;"><input type="radio" name="sc-source-type" id="sc-source-external" value="external"> 弊社契約生豆以外で契約(別途調達)</label>
+          </div>
+        </div>
+        <div class="field span2" id="sc-usage-field">
           <label for="sc-usage">使用用途(銘柄)</label>
           <select id="sc-usage"></select>
           <p class="hint" id="sc-usage-info" style="margin-top:2px;"></p>
+        </div>
+        <div class="field span2" id="sc-usage-free-field" style="display:none;">
+          <label for="sc-usage-free">品名・銘柄(任意)</label>
+          <input type="text" id="sc-usage-free" placeholder="例: エチオピア イルガチェフェ(別途調達分)">
         </div>
         <div class="field span2">
           <label for="sc-customer">販売先(お客様名)</label>
@@ -930,6 +941,7 @@
         <table class="entries-table">
           <thead>
             <tr>
+              <th class="wrap">区分</th>
               <th class="wrap">販売先</th>
               <th class="wrap">使用用途</th>
               <th>対象期間</th>
@@ -2793,7 +2805,14 @@
   function computeSalesAllocations() {
     const byContract = {};
     const bySalesContract = {};
-    const usages = new Set(salesContracts.map(sc => sc.usage));
+
+    // 弊社契約生豆以外(別途調達)の販売契約は、仕入契約の残数とは無関係なので割当計算の対象外とする
+    salesContracts.filter(sc => sc.sourceType === "external").forEach(sc => {
+      bySalesContract[sc.id] = { allocated: sc.bags, shortfall: 0, breakdown: [] };
+    });
+
+    const internalSalesContracts = salesContracts.filter(sc => sc.sourceType !== "external");
+    const usages = new Set(internalSalesContracts.map(sc => sc.usage));
 
     usages.forEach(usage => {
       const queue = entries
@@ -2802,7 +2821,7 @@
         .map(c => ({ contract: c, remaining: c.bags - nonSalesUsedBags(c) }))
         .filter(item => item.remaining > 0.001);
 
-      const scForUsage = salesContracts.filter(sc => sc.usage === usage);
+      const scForUsage = internalSalesContracts.filter(sc => sc.usage === usage);
       scForUsage.forEach(sc => {
         let need = sc.bags;
         const breakdown = [];
@@ -3014,14 +3033,28 @@
     const usage = sel.value;
     if (!usage) { readout.textContent = ""; return; }
     const alreadyReserved = salesContracts
-      .filter(sc => sc.usage === usage && sc.id !== editingSalesContractId)
+      .filter(sc => sc.sourceType !== "external" && sc.usage === usage && sc.id !== editingSalesContractId)
       .reduce((s, sc) => s + sc.bags, 0);
     const total = totalRemainingBagsForUsage(usage);
     readout.textContent = `この使用用途の仕入契約の合計残数: ${fmt(total)}袋(うち既存の販売契約で確保済み: ${fmt(alreadyReserved)}袋)`;
   }
 
+  function currentSalesContractSourceType() {
+    const checked = document.querySelector('input[name="sc-source-type"]:checked');
+    return checked ? checked.value : "internal";
+  }
+
+  function updateSalesContractSourceTypeUI() {
+    const isExternal = currentSalesContractSourceType() === "external";
+    document.getElementById("sc-usage-field").style.display = isExternal ? "none" : "";
+    document.getElementById("sc-usage-free-field").style.display = isExternal ? "" : "none";
+  }
+
   function addSalesContract() {
-    const usage = document.getElementById("sc-usage").value;
+    const sourceType = currentSalesContractSourceType();
+    const usage = sourceType === "external"
+      ? document.getElementById("sc-usage-free").value.trim()
+      : document.getElementById("sc-usage").value;
     const customer = document.getElementById("sc-customer").value.trim();
     const start = document.getElementById("sc-start").value;
     const end = document.getElementById("sc-end").value;
@@ -3030,7 +3063,7 @@
     const price = priceRaw === "" ? null : Number(priceRaw);
     const note = document.getElementById("sc-note").value.trim();
     const errEl = document.getElementById("sc-error");
-    if (!usage) {
+    if (sourceType === "internal" && !usage) {
       errEl.textContent = "使用用途を選択してください。";
       return;
     }
@@ -3051,15 +3084,15 @@
     if (editingSalesContractId !== null) {
       const idx = salesContracts.findIndex(sc => sc.id === editingSalesContractId);
       if (idx !== -1) {
-        salesContracts[idx] = { id: editingSalesContractId, usage, customer, start, end, bags, price, note };
+        salesContracts[idx] = { id: editingSalesContractId, sourceType, usage, customer, start, end, bags, price, note };
       }
       editingSalesContractId = null;
       document.getElementById("sc-add").textContent = "＋ 生豆販売契約を追加";
       document.getElementById("sc-cancel-edit").style.display = "none";
-      logChange(`生豆販売契約を編集: ${usage}　${customer}　${bags}袋`);
+      logChange(`生豆販売契約を編集: ${usage || "(品名未設定)"}　${customer}　${bags}袋`);
     } else {
-      salesContracts.push({ id: nextSalesContractId++, usage, customer, start, end, bags, price, note });
-      logChange(`生豆販売契約を追加: ${usage}　${customer}　${bags}袋`);
+      salesContracts.push({ id: nextSalesContractId++, sourceType, usage, customer, start, end, bags, price, note });
+      logChange(`生豆販売契約を追加: ${usage || "(品名未設定)"}　${customer}　${bags}袋`);
     }
     document.getElementById("sc-customer").value = "";
     document.getElementById("sc-start").value = "";
@@ -3067,6 +3100,9 @@
     document.getElementById("sc-bags").value = "";
     document.getElementById("sc-price").value = "";
     document.getElementById("sc-note").value = "";
+    document.getElementById("sc-usage-free").value = "";
+    document.getElementById("sc-source-internal").checked = true;
+    updateSalesContractSourceTypeUI();
     render();
   }
 
@@ -3074,9 +3110,16 @@
     const sc = salesContracts.find(x => x.id === id);
     if (!sc) return;
     editingSalesContractId = id;
+    const isExternal = sc.sourceType === "external";
+    document.getElementById(isExternal ? "sc-source-external" : "sc-source-internal").checked = true;
+    updateSalesContractSourceTypeUI();
     refreshSalesContractSelect();
-    document.getElementById("sc-usage").value = sc.usage;
-    updateSalesContractInfo();
+    if (isExternal) {
+      document.getElementById("sc-usage-free").value = sc.usage || "";
+    } else {
+      document.getElementById("sc-usage").value = sc.usage;
+      updateSalesContractInfo();
+    }
     document.getElementById("sc-customer").value = sc.customer;
     document.getElementById("sc-start").value = sc.start;
     document.getElementById("sc-end").value = sc.end;
@@ -3100,6 +3143,9 @@
     document.getElementById("sc-bags").value = "";
     document.getElementById("sc-price").value = "";
     document.getElementById("sc-note").value = "";
+    document.getElementById("sc-usage-free").value = "";
+    document.getElementById("sc-source-internal").checked = true;
+    updateSalesContractSourceTypeUI();
     document.getElementById("sc-error").textContent = "";
     document.getElementById("sc-add").textContent = "＋ 生豆販売契約を追加";
     document.getElementById("sc-cancel-edit").style.display = "none";
@@ -3110,7 +3156,7 @@
     const target = salesContracts.find(sc => sc.id === id);
     salesContracts = salesContracts.filter(sc => sc.id !== id);
     if (target) {
-      logChange(`生豆販売契約を削除: ${target.usage}　${target.customer}　${target.bags}袋`);
+      logChange(`生豆販売契約を削除: ${target.usage || "(品名未設定)"}　${target.customer}　${target.bags}袋`);
     }
     if (editingSalesContractId === id) cancelSalesContractEdit();
     render();
@@ -3127,20 +3173,24 @@
     empty.style.display = "none";
     const { bySalesContract } = computeSalesAllocations();
     salesContracts.forEach(sc => {
+      const isExternal = sc.sourceType === "external";
       const alloc = bySalesContract[sc.id] || { allocated: 0, shortfall: sc.bags, breakdown: [] };
-      const breakdownText = alloc.breakdown.length > 0
-        ? alloc.breakdown.map(b => {
-            const c = entries.find(e => e.id === b.contractId);
-            return c ? `${contractLabel(c)}: ${fmt(b.bags)}袋` : `(削除済み契約): ${fmt(b.bags)}袋`;
-          }).join("、")
-        : "—";
-      const shortfallWarning = alloc.shortfall > 0.001
+      const breakdownText = isExternal
+        ? "—(契約生豆以外)"
+        : (alloc.breakdown.length > 0
+          ? alloc.breakdown.map(b => {
+              const c = entries.find(e => e.id === b.contractId);
+              return c ? `${contractLabel(c)}: ${fmt(b.bags)}袋` : `(削除済み契約): ${fmt(b.bags)}袋`;
+            }).join("、")
+          : "—");
+      const shortfallWarning = (!isExternal && alloc.shortfall > 0.001)
         ? `<div class="warn" style="margin-top:4px; padding:4px 8px; font-size:11px;">仕入契約の残数不足で${fmt(alloc.shortfall)}袋分が未充当です</div>`
         : "";
       const tr = document.createElement("tr");
       tr.innerHTML = `
+        <td class="wrap">${isExternal ? "契約生豆以外" : "契約生豆から"}</td>
         <td class="wrap">${sc.customer}</td>
-        <td class="wrap">${sc.usage}</td>
+        <td class="wrap">${sc.usage || "—"}</td>
         <td>${monthLabel(sc.start)} 〜 ${monthLabel(sc.end)}</td>
         <td class="num">${fmt(sc.bags)}</td>
         <td class="num">${fmt(shippedBagsForSalesContract(sc.id))}</td>
@@ -3169,7 +3219,8 @@
   }
 
   function salesContractLabel(sc) {
-    return `${sc.customer}　${sc.usage}(${monthLabel(sc.start)}〜${monthLabel(sc.end)}、${fmt(sc.bags)}袋契約)`;
+    const sourceTag = sc.sourceType === "external" ? "契約生豆以外" : "契約生豆から";
+    return `${sc.customer}　${sc.usage || "(品名未設定)"}(${sourceTag}、${monthLabel(sc.start)}〜${monthLabel(sc.end)}、${fmt(sc.bags)}袋契約)`;
   }
 
   function refreshContractedShipmentSelect() {
@@ -4040,6 +4091,8 @@
   document.getElementById("sh-contract").addEventListener("change", updateShipmentContractSupplierReadout);
   document.getElementById("sc-add").addEventListener("click", addSalesContract);
   document.getElementById("sc-usage").addEventListener("change", updateSalesContractInfo);
+  document.getElementById("sc-source-internal").addEventListener("change", updateSalesContractSourceTypeUI);
+  document.getElementById("sc-source-external").addEventListener("change", updateSalesContractSourceTypeUI);
   document.getElementById("sc-cancel-edit").addEventListener("click", cancelSalesContractEdit);
   document.getElementById("cs-add").addEventListener("click", addContractedShipment);
   document.getElementById("cs-sales-contract").addEventListener("change", updateContractedShipmentInfo);
