@@ -955,6 +955,10 @@
           <label for="sc-bags">契約数量(袋)</label>
           <input type="number" id="sc-bags" min="0" step="1" placeholder="2">
         </div>
+        <div class="field" id="sc-external-shipped-field" style="display:none;">
+          <label for="sc-external-shipped">登録時点で出荷済みの袋数(任意)</label>
+          <input type="number" id="sc-external-shipped" min="0" step="1" placeholder="未出荷なら0">
+        </div>
         <div class="field">
           <label for="sc-price">販売単価(円/kg・任意)</label>
           <input type="number" id="sc-price" min="0" step="1" placeholder="未入力可">
@@ -3091,6 +3095,7 @@
     document.getElementById("sc-usage-free-field").style.display = isExternal ? "" : "none";
     document.getElementById("sc-external-supplier-field").style.display = isExternal ? "" : "none";
     document.getElementById("sc-external-purchase-price-field").style.display = isExternal ? "" : "none";
+    document.getElementById("sc-external-shipped-field").style.display = isExternal ? "" : "none";
     document.getElementById("sc-source-internal-label").classList.toggle("selected", !isExternal);
     document.getElementById("sc-source-external-label").classList.toggle("selected", isExternal);
   }
@@ -3110,6 +3115,10 @@
     const externalPurchasePrice = sourceType === "external" && externalPurchasePriceRaw !== ""
       ? Number(externalPurchasePriceRaw)
       : null;
+    const externalShippedRaw = document.getElementById("sc-external-shipped").value;
+    const alreadyShippedBags = sourceType === "external" && externalShippedRaw !== ""
+      ? Number(externalShippedRaw)
+      : 0;
     const customer = document.getElementById("sc-customer").value.trim();
     const start = document.getElementById("sc-start").value;
     const end = document.getElementById("sc-end").value;
@@ -3146,19 +3155,23 @@
       errEl.textContent = "終了月は開始月以降にしてください。";
       return;
     }
+    if (sourceType === "external" && alreadyShippedBags > bags) {
+      errEl.textContent = "出荷済み袋数は契約数量以下にしてください。";
+      return;
+    }
     errEl.textContent = "";
 
     if (editingSalesContractId !== null) {
       const idx = salesContracts.findIndex(sc => sc.id === editingSalesContractId);
       if (idx !== -1) {
-        salesContracts[idx] = { id: editingSalesContractId, sourceType, usage, productName, externalSupplier, externalPurchasePrice, customer, start, end, bags, price, note };
+        salesContracts[idx] = { id: editingSalesContractId, sourceType, usage, productName, externalSupplier, externalPurchasePrice, alreadyShippedBags, customer, start, end, bags, price, note };
       }
       editingSalesContractId = null;
       document.getElementById("sc-add").textContent = "＋ 生豆販売契約を追加";
       document.getElementById("sc-cancel-edit").style.display = "none";
       logChange(`生豆販売契約を編集: ${productName || usage || "(品名未設定)"}　${customer}　${bags}袋`);
     } else {
-      salesContracts.push({ id: nextSalesContractId++, sourceType, usage, productName, externalSupplier, externalPurchasePrice, customer, start, end, bags, price, note });
+      salesContracts.push({ id: nextSalesContractId++, sourceType, usage, productName, externalSupplier, externalPurchasePrice, alreadyShippedBags, customer, start, end, bags, price, note });
       logChange(`生豆販売契約を追加: ${productName || usage || "(品名未設定)"}　${customer}　${bags}袋`);
     }
     document.getElementById("sc-customer").value = "";
@@ -3171,6 +3184,7 @@
     document.getElementById("sc-product-name").value = "";
     document.getElementById("sc-external-supplier").value = "";
     document.getElementById("sc-external-purchase-price").value = "";
+    document.getElementById("sc-external-shipped").value = "";
     document.getElementById("sc-source-internal").checked = true;
     updateSalesContractSourceTypeUI();
     render();
@@ -3188,6 +3202,7 @@
       document.getElementById("sc-usage-free").value = sc.usage || "";
       document.getElementById("sc-external-supplier").value = sc.externalSupplier || "";
       document.getElementById("sc-external-purchase-price").value = sc.externalPurchasePrice != null ? sc.externalPurchasePrice : "";
+      document.getElementById("sc-external-shipped").value = sc.alreadyShippedBags ? sc.alreadyShippedBags : "";
     } else {
       document.getElementById("sc-usage").value = sc.usage;
       document.getElementById("sc-product-name").value = sc.productName || "";
@@ -3220,6 +3235,7 @@
     document.getElementById("sc-product-name").value = "";
     document.getElementById("sc-external-supplier").value = "";
     document.getElementById("sc-external-purchase-price").value = "";
+    document.getElementById("sc-external-shipped").value = "";
     document.getElementById("sc-source-internal").checked = true;
     updateSalesContractSourceTypeUI();
     document.getElementById("sc-error").textContent = "";
@@ -3293,7 +3309,9 @@
   // ==================== 契約生豆出荷処理(生豆販売契約に対する実際の出荷記録) ====================
   // この記録は仕入契約の残数には影響しない(販売契約の登録時点ですでに差し引かれているため)。
   function shippedBagsForSalesContract(salesContractId) {
-    return contractedShipments.filter(cs => cs.salesContractId === salesContractId).reduce((s, cs) => s + cs.bags, 0);
+    const sc = salesContracts.find(x => x.id === salesContractId);
+    const baseline = sc && sc.alreadyShippedBags ? sc.alreadyShippedBags : 0;
+    return baseline + contractedShipments.filter(cs => cs.salesContractId === salesContractId).reduce((s, cs) => s + cs.bags, 0);
   }
 
   function salesContractLabel(sc) {
