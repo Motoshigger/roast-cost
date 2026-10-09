@@ -1171,8 +1171,8 @@
     </div>
 
     <div class="tab-panel" data-tab-panel="balance" hidden>
-      <div class="section-heading"><h2>契約ごとの残数</h2></div>
-      <p class="hint" style="padding:0 22px 10px;">「期間超過」は契約の終了月をすでに過ぎているのに残数が残っている契約です。「使用数」には入荷・契約生豆からの出荷に加え、「弊社契約生豆から成約」した生豆販売契約で確保された数量(うち生豆販売用の列)も含まれています。残数はこれらすべてを差し引いた後の数です。</p>
+      <div class="section-heading" style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;"><h2>契約ごとの残数</h2><button class="btn" id="balance-export-csv" type="button">CSV出力(商社照合用)</button></div>
+      <p class="hint" style="padding:0 22px 10px;">「期間超過」は契約の終了月をすでに過ぎているのに残数が残っている契約です。「使用数」には入荷・契約生豆からの出荷に加え、「弊社契約生豆から成約」した生豆販売契約で確保された数量(うち生豆販売用の列)も含まれています。残数はこれらすべてを差し引いた後の数です。CSV出力は現在時点の残数のため、過去の特定時点(例: 9月末)の数値とは入荷・出荷の記録状況によってずれる場合があります。</p>
       <div class="table-wrap">
         <table class="entries-table compact-table">
           <thead>
@@ -3581,6 +3581,41 @@
     });
   }
 
+  function csvEscape(v) {
+    const s = v === null || v === undefined ? "" : String(v);
+    return /["\r\n,]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  }
+
+  // 現在時点の契約残数一覧をCSVで出力する(各商社の契約残高表との照合用)
+  function exportBalanceCsv() {
+    const salesUsedByContract = computeSalesAllocations().byContract;
+    const contracts = entries
+      .filter(e => e.kind === "contract")
+      .slice()
+      .sort((a, b) => (a.supplier || "").localeCompare(b.supplier || "", "ja") || a.end.localeCompare(b.end));
+
+    const header = ["仕入先", "生産国", "商品名", "契約番号", "使用用途", "開始月", "終了月", "数量(kg)", "単価(円/kg)", "元本(袋)", "使用数(袋)", "うち生豆販売用(袋)", "残数(袋)"];
+    const rows = contracts.map(c => {
+      const salesUsed = salesUsedByContract[c.id] || 0;
+      const used = nonSalesUsedBags(c) + salesUsed;
+      const remaining = c.bags - used;
+      return [c.supplier || "", c.country, c.product, c.contractNo || "", c.usage || "", monthLabel(c.start), monthLabel(c.end), c.bags * c.weight, c.price, c.bags, used, salesUsed, remaining];
+    });
+
+    const csvText = [header, ...rows].map(r => r.map(csvEscape).join(",")).join("\r\n");
+    const blob = new Blob(["﻿" + csvText], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const now = new Date();
+    const ymd = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}`;
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `契約残数一覧_${ymd}時点.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
   // 使用用途ごとに、契約済みの仕入契約がどの期間をカバーしているかをガントチャート形式で表示する
   function renderGantt() {
     const container = document.getElementById("gantt-container");
@@ -4427,6 +4462,7 @@
     });
   });
 
+  document.getElementById("balance-export-csv").addEventListener("click", exportBalanceCsv);
   document.getElementById("c-clear").addEventListener("click", cancelContractEdit);
   document.getElementById("c-cancel-edit").addEventListener("click", cancelContractEdit);
 
