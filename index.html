@@ -1103,7 +1103,7 @@
 
     <div class="tab-panel" data-tab-panel="balance" hidden>
       <div class="section-heading"><h2>契約ごとの残数</h2></div>
-      <p class="hint" style="padding:0 22px 10px;">「期間超過」は契約の終了月をすでに過ぎているのに残数が残っている契約です。</p>
+      <p class="hint" style="padding:0 22px 10px;">「期間超過」は契約の終了月をすでに過ぎているのに残数が残っている契約です。「使用数」には入荷・契約生豆からの出荷に加え、「弊社契約生豆から成約」した生豆販売契約で確保された数量(うち生豆販売用の列)も含まれています。残数はこれらすべてを差し引いた後の数です。</p>
       <div class="table-wrap">
         <table class="entries-table compact-table">
           <thead>
@@ -1118,6 +1118,7 @@
               <th class="num">単価</th>
               <th class="num">元本(袋)</th>
               <th class="num">使用数(袋)</th>
+              <th class="num">うち生豆販売用(袋)</th>
               <th class="num">残数(袋)</th>
             </tr>
           </thead>
@@ -1141,6 +1142,7 @@
               <th class="num">単価</th>
               <th class="num">元本(袋)</th>
               <th class="num">使用数(袋)</th>
+              <th class="num">うち生豆販売用(袋)</th>
               <th class="num">残数(袋)</th>
             </tr>
           </thead>
@@ -3416,8 +3418,9 @@
     return future.concat(past);
   }
 
-  function balanceRowHtml(c) {
-    const used = usedBags(c);
+  function balanceRowHtml(c, salesUsedByContract) {
+    const salesUsed = salesUsedByContract[c.id] || 0;
+    const used = nonSalesUsedBags(c) + salesUsed;
     const remaining = c.bags - used;
     const remainingClass = remaining < 0 ? "negative" : remaining === 0 ? "zero" : "";
     const totalKg = c.bags * c.weight;
@@ -3434,12 +3437,14 @@
       <td class="num">¥${fmt(c.price)}<span class="sub">/kg</span></td>
       <td class="num">${fmt(c.bags)}</td>
       <td class="num">${fmt(used)}</td>
+      <td class="num">${fmt(salesUsed)}</td>
       <td class="num balance-remaining ${remainingClass}">${fmt(remaining)}</td>
     `;
   }
 
   function renderBalance() {
     const contracts = entries.filter(e => e.kind === "contract");
+    const salesUsedByContract = computeSalesAllocations().byContract;
     const active = contracts.filter(c => c.bags - usedBags(c) > 0.001);
     const completed = contracts.filter(c => c.bags - usedBags(c) <= 0.001);
 
@@ -3450,7 +3455,7 @@
     active.forEach(c => {
       const tr = document.createElement("tr");
       if (c.end < currentMonthStr()) tr.classList.add("overdue-row");
-      tr.innerHTML = balanceRowHtml(c);
+      tr.innerHTML = balanceRowHtml(c, salesUsedByContract);
       body.appendChild(tr);
     });
 
@@ -3460,7 +3465,7 @@
     completedEmpty.style.display = completed.length === 0 ? "block" : "none";
     completed.forEach(c => {
       const tr = document.createElement("tr");
-      tr.innerHTML = balanceRowHtml(c);
+      tr.innerHTML = balanceRowHtml(c, salesUsedByContract);
       completedBody.appendChild(tr);
     });
   }
