@@ -932,7 +932,7 @@
           <input type="text" id="sc-product-name" placeholder="例: ブラジル No.2 17/18">
         </div>
         <div class="field span2" id="sc-usage-free-field" style="display:none;">
-          <label for="sc-usage-free">品名・銘柄(任意)</label>
+          <label for="sc-usage-free">品名・銘柄</label>
           <input type="text" id="sc-usage-free" placeholder="例: エチオピア イルガチェフェ(別途調達分)">
         </div>
         <div class="field span2" id="sc-external-supplier-field" style="display:none;">
@@ -3110,6 +3110,10 @@
     const errEl = document.getElementById("sc-error");
     if (sourceType === "internal" && !usage) {
       errEl.textContent = "使用用途を選択してください。";
+      return;
+    }
+    if (sourceType === "external" && !usage) {
+      errEl.textContent = "品名・銘柄を入力してください。";
       return;
     }
     if (sourceType === "external" && !externalSupplier) {
