@@ -337,6 +337,74 @@
     min-height: 14px;
   }
 
+  .gantt-usage-block {
+    margin: 0 22px 28px;
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 14px 16px 16px;
+    background: var(--surface-raised);
+  }
+  .gantt-usage-title {
+    font-weight: 700;
+    font-size: 15px;
+    margin-bottom: 10px;
+  }
+  .gantt-grid {
+    display: grid;
+    width: max-content;
+    min-width: 100%;
+    border-top: 1px solid var(--line);
+    border-left: 1px solid var(--line);
+  }
+  .gantt-cell {
+    border-right: 1px solid var(--line);
+    border-bottom: 1px solid var(--line);
+    padding: 6px 8px;
+    font-size: 12px;
+    display: flex;
+    align-items: center;
+    min-height: 34px;
+    box-sizing: border-box;
+  }
+  .gantt-head {
+    background: var(--surface);
+    font-weight: 600;
+    justify-content: center;
+    text-align: center;
+  }
+  .gantt-head.gantt-current { color: var(--accent); }
+  .gantt-row-label {
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+    gap: 1px;
+  }
+  .gantt-row-title { font-weight: 600; }
+  .gantt-row-sub { font-size: 11px; color: var(--ink-soft); }
+  .gantt-track { background: var(--surface); }
+  .gantt-bar {
+    padding: 0;
+    overflow: hidden;
+  }
+  .gantt-bar-inner {
+    height: 100%;
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--surface);
+    background: var(--accent);
+    padding: 4px 6px;
+    box-sizing: border-box;
+  }
+  .gantt-bar-inner.depleted {
+    background: var(--line);
+    color: var(--ink-soft);
+  }
+
   .source-type-toggle {
     display: flex;
     gap: 12px;
@@ -750,6 +818,7 @@
         <button class="tab-btn" data-tab="forecast" role="tab" aria-selected="false">在庫切れ予測</button>
         <button class="tab-btn" data-tab="balance" role="tab" aria-selected="false">契約残数管理</button>
         <button class="tab-btn" data-tab="usage-history" role="tab" aria-selected="false">使用実績(使用用途別)</button>
+        <button class="tab-btn" data-tab="gantt" role="tab" aria-selected="false">使用用途別ガントチャート</button>
       </div>
       <div class="tabs-row">
         <span class="tab-group-label">確認</span>
@@ -1150,6 +1219,13 @@
         </table>
         <div class="empty" id="balance-completed-empty" style="display:none;">残数が0になった契約はまだありません。</div>
       </div>
+    </div>
+
+    <div class="tab-panel" data-tab-panel="gantt" hidden>
+      <div class="section-heading"><h2>使用用途別ガントチャート</h2></div>
+      <p class="hint" style="padding:0 22px 10px;">使用用途ごとに、契約済みの仕入契約がどの期間をカバーしているかを帯で表示します。帯の中の数字は「契約数量袋中、残数◯袋」です。色が薄いほど残数が少ないことを表します。</p>
+      <div id="gantt-container"></div>
+      <div class="empty" id="gantt-empty" style="display:none; margin:0 22px 22px;">使用用途が登録された契約生豆がまだありません。</div>
     </div>
 
     <div class="tab-panel" data-tab-panel="matrix" hidden>
@@ -3505,6 +3581,93 @@
     });
   }
 
+  // 使用用途ごとに、契約済みの仕入契約がどの期間をカバーしているかをガントチャート形式で表示する
+  function renderGantt() {
+    const container = document.getElementById("gantt-container");
+    const empty = document.getElementById("gantt-empty");
+    container.innerHTML = "";
+
+    const salesUsedByContract = computeSalesAllocations().byContract;
+    const usages = uniqueUsages().filter(u =>
+      entries.some(e => e.kind === "contract" && e.usage === u)
+    );
+
+    empty.style.display = usages.length === 0 ? "block" : "none";
+
+    usages.forEach(usage => {
+      const contracts = entries
+        .filter(e => e.kind === "contract" && e.usage === usage)
+        .slice()
+        .sort((a, b) => a.start.localeCompare(b.start) || a.end.localeCompare(b.end));
+      if (contracts.length === 0) return;
+
+      const minStart = contracts.reduce((m, c) => (c.start < m ? c.start : m), contracts[0].start);
+      const maxEnd = contracts.reduce((m, c) => (c.end > m ? c.end : m), contracts[0].end);
+      const months = monthsBetween(minStart, maxEnd);
+      const nowMonth = currentMonthStr();
+
+      const block = document.createElement("div");
+      block.className = "gantt-usage-block";
+
+      const title = document.createElement("div");
+      title.className = "gantt-usage-title";
+      title.textContent = usage;
+      block.appendChild(title);
+
+      const scrollWrap = document.createElement("div");
+      scrollWrap.className = "table-wrap";
+
+      const grid = document.createElement("div");
+      grid.className = "gantt-grid";
+      grid.style.gridTemplateColumns = `200px repeat(${months.length}, minmax(80px, 1fr))`;
+
+      // ヘッダー行
+      const labelHead = document.createElement("div");
+      labelHead.className = "gantt-cell gantt-head";
+      labelHead.textContent = "仕入先 / 契約期間";
+      grid.appendChild(labelHead);
+      months.forEach(m => {
+        const cell = document.createElement("div");
+        cell.className = "gantt-cell gantt-head" + (m === nowMonth ? " gantt-current" : "");
+        cell.textContent = monthLabel(m);
+        grid.appendChild(cell);
+      });
+
+      // 契約ごとの行
+      contracts.forEach(c => {
+        const labelCell = document.createElement("div");
+        labelCell.className = "gantt-cell gantt-row-label";
+        labelCell.innerHTML = `<div class="gantt-row-title">${c.supplier || "—"}</div><div class="gantt-row-sub">${monthLabel(c.start)}〜${monthLabel(c.end)}</div>`;
+        grid.appendChild(labelCell);
+
+        const startIdx = months.indexOf(c.start);
+        const endIdx = months.indexOf(c.end);
+        const used = nonSalesUsedBags(c) + (salesUsedByContract[c.id] || 0);
+        const remaining = c.bags - used;
+
+        for (let i = 0; i < months.length; i++) {
+          if (i < startIdx || i > endIdx) {
+            const cell = document.createElement("div");
+            cell.className = "gantt-cell gantt-track";
+            grid.appendChild(cell);
+          } else if (i === startIdx) {
+            const cell = document.createElement("div");
+            cell.className = "gantt-cell gantt-bar";
+            cell.style.gridColumn = `span ${endIdx - startIdx + 1}`;
+            const depleted = remaining <= 0.001;
+            cell.innerHTML = `<div class="gantt-bar-inner${depleted ? " depleted" : ""}">${fmt(c.bags)}袋中 残${fmt(remaining)}袋</div>`;
+            grid.appendChild(cell);
+          }
+          // startIdx < i <= endIdx はspanに含まれるため何も追加しない
+        }
+      });
+
+      scrollWrap.appendChild(grid);
+      block.appendChild(scrollWrap);
+      container.appendChild(block);
+    });
+  }
+
   function renderArrivalsHistory() {
     const body = document.getElementById("arrivals-body");
     const empty = document.getElementById("arrivals-empty");
@@ -4175,6 +4338,7 @@
     renderMatrix();
     refreshContractSelect();
     renderBalance();
+    renderGantt();
     renderArrivalsHistory();
     refreshShipmentContractSelect();
     renderShipmentHistory();
@@ -4279,7 +4443,7 @@
       document.querySelectorAll(".tab-panel").forEach(panel => {
         panel.hidden = panel.dataset.tabPanel !== target;
       });
-      document.getElementById("entries-panel").hidden = target === "balance" || target === "arrival" || target === "shipment" || target === "sales-contract" || target === "contracted-shipment" || target === "matrix" || target === "roast" || target === "roast-matrix" || target === "usage-history" || target === "forecast" || target === "payment" || target === "payment-gap" || target === "simulation" || target === "history";
+      document.getElementById("entries-panel").hidden = target === "balance" || target === "arrival" || target === "shipment" || target === "sales-contract" || target === "contracted-shipment" || target === "matrix" || target === "roast" || target === "roast-matrix" || target === "usage-history" || target === "forecast" || target === "payment" || target === "payment-gap" || target === "simulation" || target === "history" || target === "gantt";
       if (target === "simulation") renderSimTab();
       if (target === "roast") renderComponentRows();
       if (target === "usage-history") {
