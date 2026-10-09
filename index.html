@@ -936,7 +936,7 @@
           <input type="text" id="sc-usage-free" placeholder="例: エチオピア イルガチェフェ(別途調達分)">
         </div>
         <div class="field span2" id="sc-external-supplier-field" style="display:none;">
-          <label for="sc-external-supplier">調達先商社(任意)</label>
+          <label for="sc-external-supplier">仕入先商社</label>
           <input type="text" id="sc-external-supplier" placeholder="例: ◯◯商事">
         </div>
         <div class="field span2">
@@ -978,7 +978,7 @@
               <th class="wrap">区分</th>
               <th class="wrap">販売先</th>
               <th class="wrap">商品名/使用用途</th>
-              <th class="wrap">調達先商社</th>
+              <th class="wrap">仕入先商社</th>
               <th>対象期間</th>
               <th class="num">契約数量(袋)</th>
               <th class="num">出荷済み(袋)</th>
@@ -3110,6 +3110,10 @@
     const errEl = document.getElementById("sc-error");
     if (sourceType === "internal" && !usage) {
       errEl.textContent = "使用用途を選択してください。";
+      return;
+    }
+    if (sourceType === "external" && !externalSupplier) {
+      errEl.textContent = "仕入先商社を入力してください。";
       return;
     }
     if (!customer || !start || !end || !bags) {
