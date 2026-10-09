@@ -913,7 +913,7 @@
 
     <div class="tab-panel form-panel" data-tab-panel="sales-contract" hidden>
       <h2><span class="badge contract">生豆販売契約</span>お客様向けの生豆販売契約を追加</h2>
-      <p class="hint" style="margin:0 0 10px;">お客様と結んだ生豆販売契約を登録します。「弊社契約生豆から成約」の場合、登録した数量は、同じ使用用途の仕入契約の中から、契約終了月が早いもの(=先に無くなるもの)から順に自動で割り当てて差し引かれます(複数の仕入契約にまたがる場合もあります)。「弊社契約生豆以外で契約」の場合は、弊社の仕入契約残数とは関係なく(別途調達する前提で)記録のみ行い、仕入契約の残数には影響しません。</p>
+      <p class="hint" style="margin:0 0 10px;">お客様と結んだ生豆販売契約を登録します。「弊社契約生豆から成約」の場合、登録した数量は、同じ使用用途の仕入契約の中から、お客様との対象期間になるべく近い(期間が重なる、または時期が近い)仕入契約から優先的に自動で割り当てて差し引かれます(複数の仕入契約にまたがる場合もあります)。「弊社契約生豆以外で契約」の場合は、弊社の仕入契約残数とは関係なく(別途調達する前提で)記録のみ行い、仕入契約の残数には影響しません。</p>
       <div class="form-grid">
         <div class="field span2">
           <label>区分</label>
@@ -2845,7 +2845,28 @@
     return openingUsed + arrivalsUsed + shipmentsUsed;
   }
 
-  // 使用用途ごとに、生豆販売契約の数量を「契約終了月が早い仕入契約」から順に自動で割り当てる(FIFO)。
+  // "YYYY-MM" を通し月数(年*12+月)に変換する
+  function monthIndex(m) {
+    const [y, mo] = m.split("-").map(Number);
+    return y * 12 + mo;
+  }
+
+  // 2つの期間が重なっている月数(重なりがなければ0)
+  function periodOverlapMonths(aStart, aEnd, bStart, bEnd) {
+    const s = Math.max(monthIndex(aStart), monthIndex(bStart));
+    const e = Math.min(monthIndex(aEnd), monthIndex(bEnd));
+    return Math.max(0, e - s + 1);
+  }
+
+  // 2つの期間が重なっていない場合の、期間同士の離れ具合(月数。重なっていれば0)
+  function periodGapMonths(aStart, aEnd, bStart, bEnd) {
+    if (monthIndex(aEnd) < monthIndex(bStart)) return monthIndex(bStart) - monthIndex(aEnd);
+    if (monthIndex(bEnd) < monthIndex(aStart)) return monthIndex(aStart) - monthIndex(bEnd);
+    return 0;
+  }
+
+  // 使用用途ごとに、生豆販売契約の数量を仕入契約に割り当てる。
+  // お客様との契約期間になるべく近い(重なりが大きい、または時期が近い)仕入契約から優先的に充当する。
   // 1件の販売契約が複数の仕入契約にまたがって充当されることもある。
   // 戻り値: { byContract: {仕入契約ID: 充当された袋数}, bySalesContract: {販売契約ID: {allocated, shortfall, breakdown: [{contractId, bags}]}} }
   function computeSalesAllocations() {
@@ -2861,19 +2882,33 @@
     const usages = new Set(internalSalesContracts.map(sc => sc.usage));
 
     usages.forEach(usage => {
-      const queue = entries
+      const pool = entries
         .filter(e => e.kind === "contract" && e.usage === usage)
-        .sort((a, b) => a.end.localeCompare(b.end))
         .map(c => ({ contract: c, remaining: c.bags - nonSalesUsedBags(c) }))
         .filter(item => item.remaining > 0.001);
 
-      const scForUsage = internalSalesContracts.filter(sc => sc.usage === usage);
+      // 販売契約の開始月が早いものから優先して、合う仕入契約を押さえていく
+      const scForUsage = internalSalesContracts
+        .filter(sc => sc.usage === usage)
+        .slice()
+        .sort((a, b) => a.start.localeCompare(b.start) || a.end.localeCompare(b.end));
+
       scForUsage.forEach(sc => {
         let need = sc.bags;
         const breakdown = [];
-        for (const item of queue) {
-          if (need <= 0.001) break;
-          if (item.remaining <= 0.001) continue;
+        while (need > 0.001) {
+          const candidates = pool.filter(item => item.remaining > 0.001);
+          if (candidates.length === 0) break;
+          candidates.sort((a, b) => {
+            const overlapA = periodOverlapMonths(a.contract.start, a.contract.end, sc.start, sc.end);
+            const overlapB = periodOverlapMonths(b.contract.start, b.contract.end, sc.start, sc.end);
+            if (overlapA !== overlapB) return overlapB - overlapA; // 重なりが大きい契約を優先
+            const gapA = periodGapMonths(a.contract.start, a.contract.end, sc.start, sc.end);
+            const gapB = periodGapMonths(b.contract.start, b.contract.end, sc.start, sc.end);
+            if (gapA !== gapB) return gapA - gapB; // 離れていない契約を優先
+            return a.contract.end.localeCompare(b.contract.end); // 最後は終了月が早いものを優先
+          });
+          const item = candidates[0];
           const take = Math.min(need, item.remaining);
           item.remaining -= take;
           need -= take;
