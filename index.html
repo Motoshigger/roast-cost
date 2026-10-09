@@ -997,7 +997,7 @@
           <p class="hint" id="sc-usage-info" style="margin-top:2px;"></p>
         </div>
         <div class="field span2" id="sc-product-name-field">
-          <label for="sc-product-name">正式な商品名(任意)</label>
+          <label for="sc-product-name">正式な商品名</label>
           <input type="text" id="sc-product-name" placeholder="例: ブラジル No.2 17/18">
         </div>
         <div class="field span2" id="sc-usage-free-field" style="display:none;">
@@ -1029,8 +1029,8 @@
           <input type="number" id="sc-external-shipped" min="0" step="1" placeholder="未出荷なら0">
         </div>
         <div class="field">
-          <label for="sc-price">販売単価(円/kg・任意)</label>
-          <input type="number" id="sc-price" min="0" step="1" placeholder="未入力可">
+          <label for="sc-price">販売単価(円/kg)</label>
+          <input type="number" id="sc-price" min="0" step="1" placeholder="例: 2000">
         </div>
         <div class="field" id="sc-external-purchase-price-field" style="display:none;">
           <label for="sc-external-purchase-price">仕入価格(円/kg)</label>
@@ -3242,6 +3242,14 @@
     const errEl = document.getElementById("sc-error");
     if (sourceType === "internal" && !usage) {
       errEl.textContent = "使用用途を選択してください。";
+      return;
+    }
+    if (sourceType === "internal" && !productName) {
+      errEl.textContent = "正式な商品名を入力してください。";
+      return;
+    }
+    if (sourceType === "internal" && price === null) {
+      errEl.textContent = "販売単価を入力してください。";
       return;
     }
     if (sourceType === "external" && !usage) {
