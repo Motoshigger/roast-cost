@@ -935,6 +935,13 @@
     <div class="tab-panel" data-tab-panel="arrival" hidden>
       <div class="form-panel" style="padding-bottom:6px;">
         <div class="form-grid">
+          <div class="field span2">
+            <label>区分</label>
+            <div class="source-type-toggle">
+              <label class="source-type-option selected" id="a-type-arrival-label"><input type="radio" name="a-type" id="a-type-arrival" value="arrival" checked> 入荷処理</label>
+              <label class="source-type-option" id="a-type-adjustment-label"><input type="radio" name="a-type" id="a-type-adjustment" value="adjustment"> 調整処理</label>
+            </div>
+          </div>
           <div class="field">
             <label for="a-country-filter">生産国で絞り込み</label>
             <select id="a-country-filter"></select>
@@ -945,38 +952,45 @@
             <p class="hint" id="a-contract-supplier" style="margin-top:2px;"></p>
           </div>
           <div class="field">
-            <label for="a-date">入荷日</label>
+            <label for="a-date" id="a-date-label">入荷日</label>
             <input type="date" id="a-date">
           </div>
           <div class="field">
-            <label for="a-bags">入荷袋数</label>
+            <label for="a-bags" id="a-bags-label">入荷袋数</label>
             <input type="number" id="a-bags" min="0" step="1" placeholder="2">
           </div>
           <div class="field span2">
             <label for="a-recorder">入力者名</label>
             <input type="text" id="a-recorder" placeholder="例: 山田">
           </div>
+          <div class="field span2">
+            <label for="a-note">備考(任意)</label>
+            <input type="text" id="a-note" placeholder="例: 入荷数量の数え間違いを訂正">
+          </div>
         </div>
+        <p class="hint" id="a-type-hint" style="padding:0 0 6px;"></p>
         <p class="error" id="a-error"></p>
         <button class="btn primary" id="a-add">入荷処理を記録</button>
       </div>
-      <div class="section-heading tight"><h2>入荷履歴</h2></div>
+      <div class="section-heading tight"><h2>入荷・調整履歴</h2></div>
       <div class="table-wrap">
         <table class="entries-table">
           <thead>
             <tr>
+              <th>区分</th>
               <th>生産国</th>
               <th>商品名</th>
               <th>契約番号</th>
-              <th>入荷日</th>
-              <th class="num">入荷袋数</th>
+              <th>日付</th>
+              <th class="num">袋数</th>
               <th>入力者</th>
+              <th class="wrap">備考</th>
               <th></th>
             </tr>
           </thead>
           <tbody id="arrivals-body"></tbody>
         </table>
-        <div class="empty" id="arrivals-empty" style="display:none;">入荷履歴はまだありません。</div>
+        <div class="empty" id="arrivals-empty" style="display:none;">入荷・調整履歴はまだありません。</div>
       </div>
     </div>
 
@@ -1250,6 +1264,11 @@
           <label for="r-name2">商品名2 (任意)</label>
           <input type="text" id="r-name2" placeholder="例: Morning Blend">
         </div>
+        <div class="field">
+          <label for="r-lvalue">L値(焙煎度合・任意)</label>
+          <input type="number" id="r-lvalue" min="0" max="100" step="0.1" placeholder="例: 22.5">
+          <p class="hint" id="r-roast-degree-info" style="margin-top:2px;"></p>
+        </div>
         <div class="field span2">
           <label for="r-type">配合タイプ</label>
           <select id="r-type">
@@ -1291,6 +1310,8 @@
                 <th class="wrap">商品名2</th>
                 <th class="wrap">配合内容</th>
                 <th class="wrap">裏面表記</th>
+                <th class="wrap">焙煎度合(L値)</th>
+                <th class="wrap">呼称2</th>
                 <th class="num">焙煎ロス率</th>
                 <th></th>
               </tr>
@@ -1312,6 +1333,8 @@
                 <th class="wrap">商品名2</th>
                 <th class="wrap">配合内容</th>
                 <th class="wrap">裏面表記</th>
+                <th class="wrap">焙煎度合(L値)</th>
+                <th class="wrap">呼称2</th>
                 <th class="num">焙煎ロス率</th>
                 <th></th>
               </tr>
@@ -1333,6 +1356,8 @@
                 <th class="wrap">商品名2</th>
                 <th class="wrap">配合内容</th>
                 <th class="wrap">裏面表記</th>
+                <th class="wrap">焙煎度合(L値)</th>
+                <th class="wrap">呼称2</th>
                 <th class="num">焙煎ロス率</th>
                 <th></th>
               </tr>
@@ -4040,9 +4065,44 @@
     readout.style.color = ok ? "var(--accent-ink)" : "var(--danger)";
   }
 
+  // L値(焙煎度合)から焙煎度合呼称・呼称2を判定する。範囲外・未入力はnullを返す。
+  const ROAST_DEGREE_NAME2 = {
+    "シナモン": "浅煎り",
+    "ミディアム": "中浅煎り",
+    "ハイ": "中煎り",
+    "シティ": "中深煎り",
+    "フルシティ": "深煎り",
+    "フレンチ": "極深煎り",
+    "イタリアン": "最深煎り"
+  };
+  function computeRoastDegree(lValue) {
+    if (lValue === null || lValue === undefined || lValue === "" || isNaN(lValue)) return null;
+    const l = Number(lValue);
+    let name = null;
+    if (l >= 24 && l <= 26) name = "シナモン";
+    else if (l >= 21 && l < 24) name = "ミディアム";
+    else if (l >= 17.5 && l < 21) name = "シティ";
+    else if (l >= 16 && l < 17.5) name = "フルシティ";
+    else if (l >= 14 && l < 16) name = "フレンチ";
+    else if (l <= 13.9) name = "イタリアン";
+    if (!name) return null;
+    return { name, name2: ROAST_DEGREE_NAME2[name] };
+  }
+
+  function updateRoastDegreeInfo() {
+    const raw = document.getElementById("r-lvalue").value;
+    const info = document.getElementById("r-roast-degree-info");
+    if (raw === "") { info.textContent = ""; return; }
+    const degree = computeRoastDegree(raw);
+    info.textContent = degree ? `焙煎度合呼称: ${degree.name}(${degree.name2})` : "規定の範囲外のL値です(26を超える、または対応する範囲がありません)。";
+  }
+
   function addRoastProduct() {
     const name = document.getElementById("r-name").value.trim();
     const name2 = document.getElementById("r-name2").value.trim();
+    const lValueRaw = document.getElementById("r-lvalue").value;
+    const lValue = lValueRaw === "" ? null : Number(lValueRaw);
+    const roastDegree = computeRoastDegree(lValueRaw);
     const type = document.getElementById("r-type").value;
     const lossRaw = document.getElementById("r-loss").value;
     const errEl = document.getElementById("r-error");
@@ -4074,16 +4134,18 @@
     if (editingRoastId !== null) {
       const idx = roastedProducts.findIndex(p => p.id === editingRoastId);
       if (idx !== -1) {
-        roastedProducts[idx] = { id: editingRoastId, name, name2, type, roastLoss, components };
+        roastedProducts[idx] = { id: editingRoastId, name, name2, lValue, roastDegreeName: roastDegree ? roastDegree.name : null, roastDegreeName2: roastDegree ? roastDegree.name2 : null, type, roastLoss, components };
       }
       editingRoastId = null;
       logChange(`焙煎豆商品を編集: ${name}`);
     } else {
-      roastedProducts.push({ id: nextRoastId++, name, name2, type, roastLoss, components });
+      roastedProducts.push({ id: nextRoastId++, name, name2, lValue, roastDegreeName: roastDegree ? roastDegree.name : null, roastDegreeName2: roastDegree ? roastDegree.name2 : null, type, roastLoss, components });
       logChange(`焙煎豆商品を追加: ${name}`);
     }
     document.getElementById("r-name").value = "";
     document.getElementById("r-name2").value = "";
+    document.getElementById("r-lvalue").value = "";
+    updateRoastDegreeInfo();
     document.getElementById("r-loss").value = "";
     document.getElementById("r-add").textContent = "＋ 焙煎豆商品を登録";
     document.getElementById("r-cancel-edit").style.display = "none";
@@ -4098,6 +4160,8 @@
     editingRoastId = id;
     document.getElementById("r-name").value = p.name;
     document.getElementById("r-name2").value = p.name2 || "";
+    document.getElementById("r-lvalue").value = p.lValue != null ? p.lValue : "";
+    updateRoastDegreeInfo();
     document.getElementById("r-type").value = p.type;
     document.getElementById("r-loss").value = p.roastLoss != null ? p.roastLoss : "";
     document.getElementById("r-error").textContent = "";
@@ -4112,6 +4176,8 @@
     editingRoastId = null;
     document.getElementById("r-name").value = "";
     document.getElementById("r-name2").value = "";
+    document.getElementById("r-lvalue").value = "";
+    updateRoastDegreeInfo();
     document.getElementById("r-loss").value = "";
     document.getElementById("r-error").textContent = "";
     document.getElementById("r-add").textContent = "＋ 焙煎豆商品を登録";
@@ -4218,6 +4284,8 @@
         <td class="wrap">${p.name2 || "—"}</td>
         <td class="wrap">${componentSummary(p)}</td>
         <td class="wrap">${getBackLabelText(p)}</td>
+        <td class="wrap">${p.lValue != null ? `${p.lValue}${p.roastDegreeName ? "(" + p.roastDegreeName + ")" : ""}` : "—"}</td>
+        <td class="wrap">${p.roastDegreeName2 || "—"}</td>
         <td class="num">${p.roastLoss != null ? p.roastLoss + "%" : "—"}</td>
         <td class="remove" style="white-space:nowrap;">
           <button class="icon-btn" data-edit-roast="${p.id}" aria-label="編集" title="編集">✎</button>
@@ -4443,6 +4511,7 @@
   document.getElementById("cs-add").addEventListener("click", addContractedShipment);
   document.getElementById("cs-sales-contract").addEventListener("change", updateContractedShipmentInfo);
 
+  document.getElementById("r-lvalue").addEventListener("input", updateRoastDegreeInfo);
   document.getElementById("r-add").addEventListener("click", addRoastProduct);
   document.getElementById("r-add-component").addEventListener("click", () => {
     draftComponents.push({ ref: "", ratio: 0 });
