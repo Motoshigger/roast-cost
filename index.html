@@ -1265,7 +1265,7 @@
           <input type="text" id="r-name2" placeholder="例: Morning Blend">
         </div>
         <div class="field">
-          <label for="r-lvalue">L値(焙煎度合・任意)</label>
+          <label for="r-lvalue" id="r-lvalue-label">L値(焙煎度合・任意)</label>
           <input type="number" id="r-lvalue" min="0" max="100" step="0.1" placeholder="例: 22.5">
           <p class="hint" id="r-roast-degree-info" style="margin-top:2px;"></p>
         </div>
@@ -4034,12 +4034,14 @@
     container.querySelectorAll("[data-ref-idx]").forEach(sel => {
       sel.addEventListener("change", () => {
         draftComponents[Number(sel.dataset.refIdx)].ref = sel.value;
+        updateRoastDegreeInfo();
       });
     });
     container.querySelectorAll("[data-ratio-idx]").forEach(input => {
       input.addEventListener("input", () => {
         draftComponents[Number(input.dataset.ratioIdx)].ratio = Number(input.value);
         updateRatioTotalReadout();
+        updateRoastDegreeInfo();
       });
     });
     container.querySelectorAll("[data-remove-comp]").forEach(btn => {
@@ -4050,6 +4052,7 @@
     });
 
     updateRatioTotalReadout();
+    updateRoastDegreeInfo();
   }
 
   function updateRatioTotalReadout() {
@@ -4089,9 +4092,57 @@
     return { name, name2: ROAST_DEGREE_NAME2[name] };
   }
 
+  // アフターミックスの配合内容(components)と、配合先の商品(プレミックス/単一銘柄)のL値から、配合比率による加重平均の理論上のL値を計算する。
+  // 配合先にL値未設定のものが含まれる場合は missing:true を返す。
+  function computeAftermixLValue(components, otherProducts) {
+    let totalRatio = 0;
+    let weightedSum = 0;
+    let missing = false;
+    components.forEach(c => {
+      const ratio = Number(c.ratio) || 0;
+      if (ratio <= 0) return;
+      const prod = otherProducts.find(p => String(p.id) === String(c.ref));
+      if (!prod || prod.lValue === null || prod.lValue === undefined) {
+        missing = true;
+        return;
+      }
+      weightedSum += prod.lValue * ratio;
+      totalRatio += ratio;
+    });
+    if (totalRatio <= 0) return null;
+    if (missing) return { value: null, missing: true };
+    return { value: weightedSum / totalRatio, missing: false };
+  }
+
   function updateRoastDegreeInfo() {
-    const raw = document.getElementById("r-lvalue").value;
+    const type = document.getElementById("r-type").value;
+    const lvalueInput = document.getElementById("r-lvalue");
+    const label = document.getElementById("r-lvalue-label");
     const info = document.getElementById("r-roast-degree-info");
+
+    if (type === "aftermix") {
+      lvalueInput.disabled = true;
+      label.textContent = "理論上のL値(自動計算)";
+      const otherProducts = roastedProducts.filter(p => p.type !== "aftermix");
+      const result = computeAftermixLValue(draftComponents, otherProducts);
+      if (!result) {
+        lvalueInput.value = "";
+        info.textContent = "配合内容を設定すると、理論上のL値が自動計算されます。";
+      } else if (result.missing) {
+        lvalueInput.value = "";
+        info.textContent = "配合先の商品にL値が未設定のものがあるため計算できません。";
+      } else {
+        const rounded = Math.round(result.value * 10) / 10;
+        lvalueInput.value = rounded;
+        const degree = computeRoastDegree(rounded);
+        info.textContent = degree ? `理論上のL値: ${rounded}(${degree.name}・${degree.name2})` : `理論上のL値: ${rounded}(規定の範囲外)`;
+      }
+      return;
+    }
+
+    lvalueInput.disabled = false;
+    label.textContent = "L値(焙煎度合・任意)";
+    const raw = lvalueInput.value;
     if (raw === "") { info.textContent = ""; return; }
     const degree = computeRoastDegree(raw);
     info.textContent = degree ? `焙煎度合呼称: ${degree.name}(${degree.name2})` : "規定の範囲外のL値です(26を超える、または対応する範囲がありません)。";
@@ -4100,9 +4151,6 @@
   function addRoastProduct() {
     const name = document.getElementById("r-name").value.trim();
     const name2 = document.getElementById("r-name2").value.trim();
-    const lValueRaw = document.getElementById("r-lvalue").value;
-    const lValue = lValueRaw === "" ? null : Number(lValueRaw);
-    const roastDegree = computeRoastDegree(lValueRaw);
     const type = document.getElementById("r-type").value;
     const lossRaw = document.getElementById("r-loss").value;
     const errEl = document.getElementById("r-error");
@@ -4112,6 +4160,16 @@
       return;
     }
     const components = draftComponents.filter(c => c.ref && c.ratio > 0).map(c => ({ ref: c.ref, ratio: c.ratio }));
+
+    let lValue = null;
+    if (type === "aftermix") {
+      const result = computeAftermixLValue(components, roastedProducts.filter(p => p.type !== "aftermix"));
+      lValue = result && !result.missing ? Math.round(result.value * 10) / 10 : null;
+    } else {
+      const lValueRaw = document.getElementById("r-lvalue").value;
+      lValue = lValueRaw === "" ? null : Number(lValueRaw);
+    }
+    const roastDegree = computeRoastDegree(lValue);
     if (components.length === 0) {
       errEl.textContent = "配合内容を1件以上選択してください。";
       return;
