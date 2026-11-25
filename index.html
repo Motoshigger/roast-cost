@@ -834,6 +834,7 @@
       <div class="tabs-row">
         <span class="tab-group-label">ドリップパック</span>
         <button class="tab-btn" data-tab="drip" role="tab" aria-selected="false">ドリップパック原価計算(PSI)</button>
+        <button class="tab-btn" data-tab="drip-sanyo" role="tab" aria-selected="false">ドリップパック原価計算(三洋産業)</button>
       </div>
       <div class="tabs-row">
         <span class="tab-group-label">確認</span>
@@ -1485,7 +1486,13 @@
     <div class="tab-panel form-panel" data-tab-panel="drip" hidden>
       <h2>ドリップパック原価計算（PSI）</h2>
       <p class="hint" style="margin:0;">原料は「各月焙煎豆原価」から選び、当月の原価が自動で反映されます。原料・DP容量・粗利率を変えると自動で再計算・保存されます。DP原価 = 充填費用 + DP原料原価 + フィルム単価 + 印刷単価、ロス単価 = 製品ロス × DP原価 ÷ 数量、DP総原価 = DP原価 + ロス単価 + DP輸送費、提案価格 = DP総原価 ÷ (1 − 粗利率)（円未満四捨五入）。</p>
-      <div id="drip-root" style="display:flex; flex-direction:column; gap:14px;"></div>
+      <div id="drip-root" data-drip-scope="psi" style="display:flex; flex-direction:column; gap:14px;"></div>
+    </div>
+
+    <div class="tab-panel form-panel" data-tab-panel="drip-sanyo" hidden>
+      <h2>ドリップパック原価計算（三洋産業）</h2>
+      <p class="hint" style="margin:0;">原料は「各月焙煎豆原価」から選び、当月の原価が自動で反映されます。原料・DP容量・粗利率を変えると自動で再計算・保存されます。DP原価 = 包装資材 + 充填費用 + DP原料原価、ロス単価 = 製品ロス × DP原価 ÷ 数量、DP総原価 = DP原価 + ロス単価 + DP輸送費、提案価格 = DP総原価 ÷ (1 − 粗利率)（円未満四捨五入）。</p>
+      <div id="drip-root-sanyo" data-drip-scope="sanyo" style="display:flex; flex-direction:column; gap:14px;"></div>
     </div>
 
     <div class="tab-panel" data-tab-panel="history" hidden>
@@ -4452,7 +4459,7 @@
   const DRIP_STORAGE_KEY = "drip-cost-v1";
   let dripTypes = [];
   let dripNextId = 1;
-  let dripActiveTypeId = null;
+  let dripActiveTypeIds = { psi: null, sanyo: null };
   let dripLoaded = false;
   let unsubscribeDrip = null;
   let dripRoastCostMap = {};
@@ -4521,7 +4528,12 @@
     const price = m < 1 && isFinite(total) ? Math.round(total / (1 - m)) : NaN;
     return { base, lossUnit, total, price, profit: price - total };
   }
-  function dripActiveType() { return dripTypes.find(t => t.id === dripActiveTypeId) || null; }
+  // タブごとの表示対象: 三洋産業タブは key="sanyo" の形態、PSIタブはそれ以外
+  function dripScopeTypes(scope) { return dripTypes.filter(t => (t.key === "sanyo") === (scope === "sanyo")); }
+  function dripActiveType(scope) {
+    const list = dripScopeTypes(scope);
+    return list.find(t => t.id === dripActiveTypeIds[scope]) || list[0] || null;
+  }
 
   function applyDripState(d) {
     if (d && Array.isArray(d.types)) {
@@ -4540,7 +4552,6 @@
       delete t.beanPrice; // 旧版の手入力原料価格は使わない
     });
     dripLoaded = true;
-    if (!dripActiveType()) dripActiveTypeId = dripTypes.length ? dripTypes[0].id : null;
   }
 
   function loadDripLocal() {
@@ -4572,8 +4583,8 @@
     unsubscribeDrip = dripDocRef.onSnapshot(doc => {
       applyDripState(doc.exists ? doc.data() : null);
       // 入力中に他の人の更新が届いても、入力欄が消えないよう再描画を見送る
-      const panel = document.querySelector('[data-tab-panel="drip"]');
-      const typing = panel && panel.contains(document.activeElement) && document.activeElement.tagName === "INPUT";
+      const ae = document.activeElement;
+      const typing = ae && ae.tagName === "INPUT" && ae.closest("[data-drip-scope]");
       if (!typing) renderDrip();
     }, err => {
       setSyncStatus("ドリップパック原価の同期エラー: " + err.message);
@@ -4581,16 +4592,19 @@
   }
 
   function renderDrip() {
-    const root = document.getElementById("drip-root");
-    if (!root) return;
+    if (dripLoaded) dripRoastCostMap = roastedProducts.length ? computeRoastedCostMap().roastedCostMap : {};
+    document.querySelectorAll("[data-drip-scope]").forEach(root => renderDripInto(root, root.dataset.dripScope));
+  }
+
+  function renderDripInto(root, scope) {
     if (!dripLoaded) { root.innerHTML = `<div class="empty">読み込み中…</div>`; return; }
-    dripRoastCostMap = roastedProducts.length ? computeRoastedCostMap().roastedCostMap : {};
 
-    const toolbar = `<div class="drip-toolbar">${dripTypes.map(t =>
-      `<button class="btn${t.id === dripActiveTypeId ? " primary" : ""}" data-drip-type="${t.id}" type="button">${dripEsc(t.name)}</button>`
-    ).join("")}</div>`;
+    const t = dripActiveType(scope);
+    const types = dripScopeTypes(scope);
+    const toolbar = types.length > 1 ? `<div class="drip-toolbar">${types.map(x =>
+      `<button class="btn${t && x.id === t.id ? " primary" : ""}" data-drip-type="${x.id}" type="button">${dripEsc(x.name)}</button>`
+    ).join("")}</div>` : "";
 
-    const t = dripActiveType();
     if (!t) { root.innerHTML = toolbar + `<div class="empty">形態がありません。</div>`; return; }
 
     const info = dripBeanInfo(t);
@@ -4685,10 +4699,14 @@
   }
 
   function initDrip() {
-    const root = document.getElementById("drip-root");
+    document.querySelectorAll("[data-drip-scope]").forEach(root => initDripRoot(root, root.dataset.dripScope));
+    renderDrip();
+  }
+
+  function initDripRoot(root, scope) {
     root.addEventListener("change", e => {
       const el = e.target;
-      const t = dripActiveType();
+      const t = dripActiveType(scope);
       if (!t || !el.dataset.dripSetting) return;
       const f = el.dataset.dripSetting;
       const old = t[f];
@@ -4708,10 +4726,9 @@
     root.addEventListener("click", e => {
       const btn = e.target.closest("button[data-drip-type]");
       if (!btn) return;
-      dripActiveTypeId = Number(btn.dataset.dripType);
+      dripActiveTypeIds[scope] = Number(btn.dataset.dripType);
       renderDrip();
     });
-    renderDrip();
   }
 
   // ==================== 永続化(Firestore + オフライン用ローカル保存) ====================
@@ -4906,10 +4923,10 @@
       document.querySelectorAll(".tab-panel").forEach(panel => {
         panel.hidden = panel.dataset.tabPanel !== target;
       });
-      document.getElementById("entries-panel").hidden = target === "balance" || target === "arrival" || target === "shipment" || target === "sales-contract" || target === "contracted-shipment" || target === "matrix" || target === "roast" || target === "roast-matrix" || target === "usage-history" || target === "forecast" || target === "payment" || target === "payment-gap" || target === "simulation" || target === "history" || target === "gantt" || target === "drip";
+      document.getElementById("entries-panel").hidden = target === "balance" || target === "arrival" || target === "shipment" || target === "sales-contract" || target === "contracted-shipment" || target === "matrix" || target === "roast" || target === "roast-matrix" || target === "usage-history" || target === "forecast" || target === "payment" || target === "payment-gap" || target === "simulation" || target === "history" || target === "gantt" || target === "drip" || target === "drip-sanyo";
       if (target === "simulation") renderSimTab();
       if (target === "roast") renderComponentRows();
-      if (target === "drip") renderDrip();
+      if (target === "drip" || target === "drip-sanyo") renderDrip();
       if (target === "usage-history") {
         const wrap = document.getElementById("usage-matrix").closest(".table-wrap");
         if (wrap) requestAnimationFrame(() => { wrap.scrollLeft = wrap.scrollWidth; });
