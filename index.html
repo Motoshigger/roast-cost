@@ -4732,6 +4732,7 @@
         const p = roastedProducts.find(x => x.id === v);
         saveDrip(`ドリップ原価:「${t.name}」の原料を ${p ? dripProductLabel(p) : "未選択"} に変更`);
       } else {
+        if (el.value === "") return;
         const v = dripNum(el.value);
         if (v === old) return;
         t[f] = v;
