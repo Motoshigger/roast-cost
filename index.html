@@ -514,6 +514,7 @@
   .drip-settings { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
   .drip-readout { display: flex; gap: 24px; flex-wrap: wrap; font-size: 13px; color: var(--ink-soft); }
   .drip-readout strong { color: var(--ink); font-size: 16px; font-variant-numeric: tabular-nums; }
+  .drip-bean-field { grid-column: span 2; }
   .drip-input { width: 76px; text-align: right; padding: 4px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-raised); color: var(--ink); font: inherit; font-variant-numeric: tabular-nums; }
   .drip-input.text { width: 140px; text-align: left; }
   .drip-input:focus-visible { outline: 2px solid var(--accent); outline-offset: 0; }
@@ -1483,7 +1484,7 @@
 
     <div class="tab-panel form-panel" data-tab-panel="drip" hidden>
       <h2>ドリップパック原価計算（PSI）</h2>
-      <p class="hint" style="margin:0;">入力欄を書き換えて確定（Enterまたは欄の外をクリック）すると自動で再計算・保存されます。DP原価 = 充填費用 + DP原料原価 + フィルム単価 + 印刷単価、ロス単価 = 製品ロス × DP原価 ÷ 数量、DP総原価 = DP原価 + ロス単価 + DP輸送費、提案価格 = DP総原価 ÷ (1 − 粗利率)（円未満四捨五入）。</p>
+      <p class="hint" style="margin:0;">原料は「各月焙煎豆原価」から選び、当月の原価が自動で反映されます。原料・DP容量・粗利率を変えると自動で再計算・保存されます。DP原価 = 充填費用 + DP原料原価 + フィルム単価 + 印刷単価、ロス単価 = 製品ロス × DP原価 ÷ 数量、DP総原価 = DP原価 + ロス単価 + DP輸送費、提案価格 = DP総原価 ÷ (1 − 粗利率)（円未満四捨五入）。</p>
       <div id="drip-root" style="display:flex; flex-direction:column; gap:14px;"></div>
     </div>
 
@@ -4446,6 +4447,7 @@
 
   // ==================== ドリップパック原価計算(PSI) ====================
   // データは ledger/drip に別ドキュメントとして保存する(既存の ledger/main とは独立)
+  // 原料価格は「各月焙煎豆原価」から選んだ商品の当月原価を使う。作業単価(充填・フィルム・印刷・ロス・輸送・運賃・外箱)は固定で画面からは変更しない
   const dripDocRef = db.collection("ledger").doc("drip");
   const DRIP_STORAGE_KEY = "drip-cost-v1";
   let dripTypes = [];
@@ -4453,11 +4455,9 @@
   let dripActiveTypeId = null;
   let dripLoaded = false;
   let unsubscribeDrip = null;
+  let dripRoastCostMap = {};
 
-  const DRIP_LABELS = {
-    name: "形態名", beanPrice: "焙煎豆原料価格", freight: "原料運賃", boxCost: "外箱価格", grams: "DP容量", margin: "提案粗利率",
-    qty: "数量", fill: "充填費用", film: "フィルム", filmPrice: "フィルム単価", printPrice: "印刷単価", lossQty: "製品ロス", shipping: "DP輸送費"
-  };
+  const DRIP_LABELS = { beanProductId: "原料", grams: "DP容量", margin: "提案粗利率" };
 
   // Excel「ドリップ原価計算表（PSI）2026.05更新.xlsx」の 2026.05改定(PSI) シートを初期データとして使う
   function dripSeed() {
@@ -4468,10 +4468,10 @@
       lots.forEach(([qty, fill]) => films(firstFilm, mattePrice).forEach(([film, filmPrice]) => {
         rows.push({ id: id++, qty, fill, film, filmPrice, printPrice: film === "白地フルカラー" ? 20 : 8, lossQty: 40, shipping: 1 });
       }));
-      return { id: id++, name, ...base, margin: 25, rows };
+      return { id: id++, name, beanProductId: null, ...base, margin: 25, rows };
     };
-    const std = { beanPrice: 1800, freight: 120, boxCost: 12, grams: 10 };
-    const cold = { beanPrice: 2000, freight: 120, boxCost: 12, grams: 18 };
+    const std = { freight: 120, boxCost: 12, grams: 10 };
+    const cold = { freight: 120, boxCost: 12, grams: 18 };
     const xLots = [[1000, 21], [2000, 19], [3000, 18], [4000, 17.5], [8000, 15.5]];
     const types = [
       mk("X型（IN）", std, xLots, 9.5, "光沢　白黒赤"),
@@ -4486,15 +4486,28 @@
     return String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   }
   function dripNum(v) { const n = Number(v); return isFinite(n) ? n : 0; }
-  function dripArrival(t) { return dripNum(t.beanPrice) + dripNum(t.freight) + dripNum(t.boxCost); }
-  function dripBeanCost(t) { return dripArrival(t) / 1000 * dripNum(t.grams); }
-  function dripCalc(t, r) {
-    const base = dripNum(r.fill) + dripBeanCost(t) + dripNum(r.filmPrice) + dripNum(r.printPrice);
+  function dripProductLabel(p) { return p.name + (p.name2 ? `（${p.name2}）` : ""); }
+
+  // 選択した焙煎豆の当月原価。当月が未計算なら、それより前で最も新しい月の原価を使う
+  function dripBeanInfo(t) {
+    const p = roastedProducts.find(x => x.id === t.beanProductId);
+    if (!p) return { product: null, price: NaN, month: null, fallback: false };
+    const map = dripRoastCostMap[p.id] || {};
+    const cur = currentMonthStr();
+    if (map[cur] != null) return { product: p, price: map[cur], month: cur, fallback: false };
+    const past = Object.keys(map).filter(m => m < cur && map[m] != null).sort();
+    if (past.length) { const m = past[past.length - 1]; return { product: p, price: map[m], month: m, fallback: true }; }
+    return { product: p, price: NaN, month: null, fallback: false };
+  }
+  function dripArrival(t, beanPrice) { return beanPrice + dripNum(t.freight) + dripNum(t.boxCost); }
+  function dripBeanCost(t, beanPrice) { return dripArrival(t, beanPrice) / 1000 * dripNum(t.grams); }
+  function dripCalc(t, r, beanPrice) {
+    const base = dripNum(r.fill) + dripBeanCost(t, beanPrice) + dripNum(r.filmPrice) + dripNum(r.printPrice);
     const qty = dripNum(r.qty);
     const lossUnit = qty > 0 ? dripNum(r.lossQty) * base / qty : 0;
     const total = base + lossUnit + dripNum(r.shipping);
     const m = dripNum(t.margin) / 100;
-    const price = m < 1 ? Math.round(total / (1 - m)) : NaN;
+    const price = m < 1 && isFinite(total) ? Math.round(total / (1 - m)) : NaN;
     return { base, lossUnit, total, price, profit: price - total };
   }
   function dripActiveType() { return dripTypes.find(t => t.id === dripActiveTypeId) || null; }
@@ -4509,7 +4522,11 @@
       dripTypes = s.types;
       dripNextId = s.nextId;
     }
-    dripTypes.forEach(t => { if (!Array.isArray(t.rows)) t.rows = []; });
+    dripTypes.forEach(t => {
+      if (!Array.isArray(t.rows)) t.rows = [];
+      if (t.beanProductId === undefined) t.beanProductId = null;
+      delete t.beanPrice; // 旧版の手入力原料価格は使わない
+    });
     dripLoaded = true;
     if (!dripActiveType()) dripActiveTypeId = dripTypes.length ? dripTypes[0].id : null;
   }
@@ -4555,69 +4572,81 @@
     const root = document.getElementById("drip-root");
     if (!root) return;
     if (!dripLoaded) { root.innerHTML = `<div class="empty">読み込み中…</div>`; return; }
+    dripRoastCostMap = roastedProducts.length ? computeRoastedCostMap().roastedCostMap : {};
 
-    const typeBtns = dripTypes.map(t =>
+    const toolbar = `<div class="drip-toolbar">${dripTypes.map(t =>
       `<button class="btn${t.id === dripActiveTypeId ? " primary" : ""}" data-drip-type="${t.id}" type="button">${dripEsc(t.name)}</button>`
-    ).join("");
-    const toolbar = `
-      <div class="drip-toolbar">
-        ${typeBtns}
-        <span class="drip-toolbar-gap"></span>
-        <button class="btn" id="drip-add-type" type="button">＋ 形態を追加</button>
-        ${dripActiveType() ? `<button class="btn" id="drip-copy-type" type="button">この形態を複製</button>
-        <button class="btn" id="drip-del-type" type="button">この形態を削除</button>` : ""}
-      </div>`;
+    ).join("")}</div>`;
 
     const t = dripActiveType();
-    if (!t) { root.innerHTML = toolbar + `<div class="empty">形態がありません。「＋ 形態を追加」から登録してください。</div>`; return; }
+    if (!t) { root.innerHTML = toolbar + `<div class="empty">形態がありません。</div>`; return; }
 
-    const setField = (f, unit, step) => `
-      <div class="field">
-        <label for="drip-set-${f}">${DRIP_LABELS[f]}${unit ? `（${unit}）` : ""}</label>
-        <input type="${f === "name" ? "text" : "number"}" id="drip-set-${f}" data-drip-setting="${f}" ${f === "name" ? "" : `min="0" step="${step || "any"}"`} value="${dripEsc(t[f])}">
-      </div>`;
+    const info = dripBeanInfo(t);
+    const bp = info.price;
+    const options = `<option value="">— 原料を選択 —</option>` + roastedProducts.map(p =>
+      `<option value="${p.id}"${p.id === t.beanProductId ? " selected" : ""}>${dripEsc(dripProductLabel(p))}</option>`
+    ).join("");
+    let beanNote;
+    if (!info.product) beanNote = `<span class="error">原料を選択すると、各月焙煎豆原価の当月価格が反映されます。</span>`;
+    else if (!isFinite(bp)) beanNote = `<span class="error">この原料は当月以前の原価が計算できていません（各月焙煎豆原価で「―」になっています）。</span>`;
+    else if (info.fallback) beanNote = `<span class="error">当月（${monthLabel(currentMonthStr())}）の原価が未計算のため、${monthLabel(info.month)} の原価を使っています。</span>`;
+    else beanNote = `${monthLabel(info.month)} の原価を反映しています。`;
 
     const settings = `
       <div class="drip-settings">
-        ${setField("name")}
-        ${setField("beanPrice", "円/kg", 1)}
-        ${setField("freight", "円/kg", 1)}
-        ${setField("boxCost", "円/kg", 1)}
-        ${setField("grams", "g", 0.5)}
-        ${setField("margin", "%", 1)}
+        <div class="field drip-bean-field">
+          <label for="drip-set-bean">原料（各月焙煎豆原価から選択）</label>
+          <select id="drip-set-bean" data-drip-setting="beanProductId">${options}</select>
+        </div>
+        <div class="field">
+          <label for="drip-set-grams">DP容量（g）</label>
+          <input type="number" id="drip-set-grams" data-drip-setting="grams" min="0" step="0.5" value="${dripEsc(t.grams)}">
+        </div>
+        <div class="field">
+          <label for="drip-set-margin">提案粗利率（%）</label>
+          <input type="number" id="drip-set-margin" data-drip-setting="margin" min="0" max="99" step="1" value="${dripEsc(t.margin)}">
+        </div>
       </div>
+      <p class="hint" style="margin:0;">${beanNote}</p>
       <div class="drip-readout">
-        <span>PSI到着価格 <strong>¥${fmt(dripArrival(t))}</strong>/kg</span>
-        <span>DP原料原価 <strong>¥${fmt1(dripBeanCost(t))}</strong>/DP</span>
+        <span>焙煎豆原料価格 <strong>${isFinite(bp) ? `¥${fmt(bp)}` : "—"}</strong>/kg</span>
+        <span>原料運賃 <strong>¥${fmt(dripNum(t.freight))}</strong>/kg</span>
+        <span>外箱価格 <strong>¥${fmt(dripNum(t.boxCost))}</strong>/kg</span>
+        <span>PSI到着価格 <strong>${isFinite(bp) ? `¥${fmt(dripArrival(t, bp))}` : "—"}</strong>/kg</span>
+        <span>DP原料原価 <strong>${isFinite(bp) ? `¥${fmt1(dripBeanCost(t, bp))}` : "—"}</strong>/DP</span>
       </div>`;
 
-    const cell = (r, f, cls) => `<td class="${cls === "text" ? "" : "num"}"><input class="drip-input${cls === "text" ? " text" : ""}" type="${cls === "text" ? "text" : "number"}" ${cls === "text" ? "" : `min="0" step="any"`} data-drip-row="${r.id}" data-field="${f}" value="${dripEsc(r[f])}" aria-label="${DRIP_LABELS[f]}"></td>`;
     const rowsHtml = t.rows.map(r => {
-      const c = dripCalc(t, r);
+      const c = dripCalc(t, r, bp);
       return `<tr>
-        ${cell(r, "qty")}${cell(r, "fill")}${cell(r, "film", "text")}${cell(r, "filmPrice")}${cell(r, "printPrice")}${cell(r, "lossQty")}${cell(r, "shipping")}
+        <td class="num">${fmt(dripNum(r.qty))}</td>
+        <td class="num">${fmt1(dripNum(r.fill))}</td>
+        <td>${dripEsc(r.film)}</td>
+        <td class="num">${fmt1(dripNum(r.filmPrice))}</td>
+        <td class="num">${fmt1(dripNum(r.printPrice))}</td>
+        <td class="num">${fmt(dripNum(r.lossQty))}</td>
+        <td class="num">${fmt1(dripNum(r.shipping))}</td>
         <td class="num">${fmt1(c.base)}</td>
         <td class="num">${fmt1(c.lossUnit)}</td>
         <td class="num">${fmt1(c.total)}</td>
-        <td class="num drip-price">¥${fmt(c.price)}</td>
+        <td class="num drip-price">${isFinite(c.price) ? `¥${fmt(c.price)}` : "—"}</td>
         <td class="num">${fmt1(c.profit)}</td>
-        <td class="remove"><button class="icon-btn" data-drip-del-row="${r.id}" type="button" title="この行を削除" aria-label="この行を削除">×</button></td>
       </tr>`;
     }).join("");
 
     const table = `
       <div class="section-heading tight"><h2>ロット・フィルム別 原価（1DPあたり・円）</h2></div>
+      <p class="hint" style="margin:0;">数量〜DP輸送費は固定の作業単価です（画面からは変更できません）。</p>
       <div class="table-wrap">
-        <table class="compact-table drip-table">
+        <table class="compact-table">
           <thead><tr>
             <th class="num">数量</th><th class="num">充填費用</th><th>フィルム</th><th class="num">フィルム単価</th><th class="num">印刷単価</th>
             <th class="num">製品ロス<span class="sub">個</span></th><th class="num">DP輸送費</th>
-            <th class="num">DP原価</th><th class="num">ロス単価</th><th class="num">DP総原価</th><th class="num">提案価格</th><th class="num">粗利/DP</th><th></th>
+            <th class="num">DP原価</th><th class="num">ロス単価</th><th class="num">DP総原価</th><th class="num">提案価格</th><th class="num">粗利/DP</th>
           </tr></thead>
-          <tbody>${rowsHtml || `<tr><td colspan="13" class="empty">行がありません。</td></tr>`}</tbody>
+          <tbody>${rowsHtml || `<tr><td colspan="12" class="empty">行がありません。</td></tr>`}</tbody>
         </table>
-      </div>
-      <div><button class="btn" id="drip-add-row" type="button">＋ 行を追加</button></div>`;
+      </div>`;
 
     // 提案価格の早見表(数量 × フィルム)
     const qtys = [...new Set(t.rows.map(r => dripNum(r.qty)))].sort((a, b) => a - b);
@@ -4632,8 +4661,8 @@
             <tbody>${qtys.map(q => `<tr><td class="num">${fmt(q)}</td>${filmsOrder.map(f => {
               const r = t.rows.find(x => dripNum(x.qty) === q && x.film === f);
               if (!r) return `<td class="num">—</td>`;
-              const c = dripCalc(t, r);
-              return `<td class="num"><span class="drip-price">¥${fmt(c.price)}</span><span class="sub">原価 ${fmt1(c.total)}</span></td>`;
+              const c = dripCalc(t, r, bp);
+              return `<td class="num"><span class="drip-price">${isFinite(c.price) ? `¥${fmt(c.price)}` : "—"}</span><span class="sub">原価 ${fmt1(c.total)}</span></td>`;
             }).join("")}</tr>`).join("")}</tbody>
           </table>
         </div>`;
@@ -4647,62 +4676,27 @@
     root.addEventListener("change", e => {
       const el = e.target;
       const t = dripActiveType();
-      if (!t) return;
-      if (el.dataset.dripSetting) {
-        const f = el.dataset.dripSetting;
-        const old = t[f];
-        const v = f === "name" ? (el.value.trim() || old) : dripNum(el.value);
-        if (v === old) { renderDrip(); return; }
-        t[f] = v;
-        saveDrip(`ドリップ原価:「${f === "name" ? old : t.name}」の${DRIP_LABELS[f]}を ${old} → ${v} に変更`);
-      } else if (el.dataset.dripRow) {
-        const r = t.rows.find(x => x.id === Number(el.dataset.dripRow));
-        if (!r) return;
-        const f = el.dataset.field;
-        const old = r[f];
-        const v = f === "film" ? el.value.trim() : dripNum(el.value);
+      if (!t || !el.dataset.dripSetting) return;
+      const f = el.dataset.dripSetting;
+      const old = t[f];
+      if (f === "beanProductId") {
+        const v = el.value ? Number(el.value) : null;
         if (v === old) return;
-        r[f] = v;
-        saveDrip(`ドリップ原価:「${t.name}」${f === "qty" ? old : r.qty}個・${f === "film" ? old : r.film} の${DRIP_LABELS[f]}を ${old} → ${v} に変更`);
+        t[f] = v;
+        const p = roastedProducts.find(x => x.id === v);
+        saveDrip(`ドリップ原価:「${t.name}」の原料を ${p ? dripProductLabel(p) : "未選択"} に変更`);
+      } else {
+        const v = dripNum(el.value);
+        if (v === old) return;
+        t[f] = v;
+        saveDrip(`ドリップ原価:「${t.name}」の${DRIP_LABELS[f]}を ${old} → ${v} に変更`);
       }
     });
     root.addEventListener("click", e => {
-      const btn = e.target.closest("button");
+      const btn = e.target.closest("button[data-drip-type]");
       if (!btn) return;
-      const t = dripActiveType();
-      if (btn.dataset.dripType) {
-        dripActiveTypeId = Number(btn.dataset.dripType);
-        renderDrip();
-      } else if (btn.dataset.dripDelRow && t) {
-        const r = t.rows.find(x => x.id === Number(btn.dataset.dripDelRow));
-        if (!r || !confirm(`${r.qty}個・${r.film} の行を削除しますか？`)) return;
-        t.rows = t.rows.filter(x => x !== r);
-        saveDrip(`ドリップ原価:「${t.name}」${r.qty}個・${r.film} の行を削除`);
-      } else if (btn.id === "drip-add-row" && t) {
-        const last = t.rows[t.rows.length - 1];
-        t.rows.push(last ? { ...last, id: dripNextId++ } : { id: dripNextId++, qty: 1000, fill: 0, film: "", filmPrice: 0, printPrice: 0, lossQty: 40, shipping: 1 });
-        saveDrip(`ドリップ原価:「${t.name}」に行を追加`);
-      } else if (btn.id === "drip-add-type") {
-        const name = (prompt("追加する形態の名前を入力してください", "") || "").trim();
-        if (!name) return;
-        const nt = { id: dripNextId++, name, beanPrice: 1800, freight: 120, boxCost: 12, grams: 10, margin: 25, rows: [] };
-        dripTypes.push(nt);
-        dripActiveTypeId = nt.id;
-        saveDrip(`ドリップ原価: 形態「${name}」を追加`);
-      } else if (btn.id === "drip-copy-type" && t) {
-        const copy = JSON.parse(JSON.stringify(t));
-        copy.id = dripNextId++;
-        copy.name = t.name + "（コピー）";
-        copy.rows.forEach(r => { r.id = dripNextId++; });
-        dripTypes.push(copy);
-        dripActiveTypeId = copy.id;
-        saveDrip(`ドリップ原価: 形態「${t.name}」を複製`);
-      } else if (btn.id === "drip-del-type" && t) {
-        if (!confirm(`形態「${t.name}」と、その中の${t.rows.length}行をすべて削除しますか？`)) return;
-        dripTypes = dripTypes.filter(x => x !== t);
-        dripActiveTypeId = dripTypes.length ? dripTypes[0].id : null;
-        saveDrip(`ドリップ原価: 形態「${t.name}」を削除`);
-      }
+      dripActiveTypeId = Number(btn.dataset.dripType);
+      renderDrip();
     });
     renderDrip();
   }
@@ -4806,6 +4800,7 @@
     renderPayment();
     renderPaymentGap();
     renderHistory();
+    renderDrip();
   }
 
   function saveToFirestore() {
