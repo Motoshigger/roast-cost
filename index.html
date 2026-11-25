@@ -4482,6 +4482,17 @@
     return { types, nextId: id };
   }
 
+  // 三洋産業 VFR(フルカラー): Excel「2026.05改定(PSI)」シート右下の表。包装資材込みの単価で、印刷単価は別にない
+  // id は固定値にして、保存前でも再読み込みで形態が入れ替わらないようにする
+  function dripEnsureSanyo() {
+    if (dripTypes.some(t => t.key === "sanyo")) return;
+    const rows = [[1000, 59.6, 26], [4000, 50.9, 26], [8000, 47, 26], [10000, 45.5, 17]].map(([qty, pack, fill], i) => ({
+      id: 9101 + i, qty, fill, film: "白地フルカラー", filmPrice: pack, printPrice: 0, lossQty: 40, shipping: 1
+    }));
+    dripTypes.push({ id: 9100, key: "sanyo", simple: true, name: "三洋産業 VFR（フルカラー）", beanProductId: null, freight: 120, boxCost: 12, grams: 10, margin: 25, rows });
+    dripNextId = Math.max(dripNextId, 9200);
+  }
+
   function dripEsc(s) {
     return String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   }
@@ -4522,6 +4533,7 @@
       dripTypes = s.types;
       dripNextId = s.nextId;
     }
+    dripEnsureSanyo();
     dripTypes.forEach(t => {
       if (!Array.isArray(t.rows)) t.rows = [];
       if (t.beanProductId === undefined) t.beanProductId = null;
@@ -4620,10 +4632,11 @@
       const c = dripCalc(t, r, bp);
       return `<tr>
         <td class="num">${fmt(dripNum(r.qty))}</td>
-        <td class="num">${fmt1(dripNum(r.fill))}</td>
+        ${t.simple ? `<td class="num">${fmt1(dripNum(r.filmPrice))}</td>
+        <td class="num">${fmt1(dripNum(r.fill))}</td>` : `<td class="num">${fmt1(dripNum(r.fill))}</td>
         <td>${dripEsc(r.film)}</td>
         <td class="num">${fmt1(dripNum(r.filmPrice))}</td>
-        <td class="num">${fmt1(dripNum(r.printPrice))}</td>
+        <td class="num">${fmt1(dripNum(r.printPrice))}</td>`}
         <td class="num">${fmt(dripNum(r.lossQty))}</td>
         <td class="num">${fmt1(dripNum(r.shipping))}</td>
         <td class="num">${fmt1(c.base)}</td>
@@ -4640,11 +4653,11 @@
       <div class="table-wrap">
         <table class="compact-table">
           <thead><tr>
-            <th class="num">数量</th><th class="num">充填費用</th><th>フィルム</th><th class="num">フィルム単価</th><th class="num">印刷単価</th>
+            <th class="num">数量</th>${t.simple ? `<th class="num">包装資材</th><th class="num">充填費用</th>` : `<th class="num">充填費用</th><th>フィルム</th><th class="num">フィルム単価</th><th class="num">印刷単価</th>`}
             <th class="num">製品ロス<span class="sub">個</span></th><th class="num">DP輸送費</th>
             <th class="num">DP原価</th><th class="num">ロス単価</th><th class="num">DP総原価</th><th class="num">提案価格</th><th class="num">粗利/DP</th>
           </tr></thead>
-          <tbody>${rowsHtml || `<tr><td colspan="12" class="empty">行がありません。</td></tr>`}</tbody>
+          <tbody>${rowsHtml || `<tr><td colspan="${t.simple ? 10 : 12}" class="empty">行がありません。</td></tr>`}</tbody>
         </table>
       </div>`;
 
