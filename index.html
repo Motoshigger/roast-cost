@@ -4528,6 +4528,12 @@
     const price = m < 1 && isFinite(total) ? Math.round(total / (1 - m)) : NaN;
     return { base, lossUnit, total, price, profit: price - total };
   }
+  // PSIの形態ごとに選べるDP容量(g)。水出しは15〜20g、X型・VFR型・Dip Styleは10〜12g。三洋産業は制限なし
+  function dripGramRange(t) {
+    if (t.key === "sanyo") return null;
+    return /水出し/.test(t.name) ? [15, 20] : [10, 12];
+  }
+
   // タブごとの表示対象: 三洋産業タブは key="sanyo" の形態、PSIタブはそれ以外
   function dripScopeTypes(scope) { return dripTypes.filter(t => (t.key === "sanyo") === (scope === "sanyo")); }
   function dripActiveType(scope) {
@@ -4625,8 +4631,17 @@
           <select id="drip-set-bean" data-drip-setting="beanProductId">${options}</select>
         </div>
         <div class="field">
-          <label for="drip-set-grams">DP容量（g）</label>
-          <input type="number" id="drip-set-grams" data-drip-setting="grams" min="0" step="0.5" value="${dripEsc(t.grams)}">
+          ${(() => {
+            const range = dripGramRange(t);
+            if (!range) return `<label for="drip-set-grams">DP容量（g）</label>
+          <input type="number" id="drip-set-grams" data-drip-setting="grams" min="0" step="0.5" value="${dripEsc(t.grams)}">`;
+            const [lo, hi] = range;
+            const opts = [];
+            for (let g = lo; g <= hi; g++) opts.push(`<option value="${g}"${dripNum(t.grams) === g ? " selected" : ""}>${g}g</option>`);
+            const out = dripNum(t.grams) < lo || dripNum(t.grams) > hi;
+            return `<label for="drip-set-grams">DP容量（${lo}〜${hi}gから選択）</label>
+          <select id="drip-set-grams" data-drip-setting="grams">${out ? `<option value="" selected>— 選択 —</option>` : ""}${opts.join("")}</select>`;
+          })()}
         </div>
         <div class="field">
           <label for="drip-set-margin">提案粗利率（%）</label>
