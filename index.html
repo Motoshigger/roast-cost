@@ -519,6 +519,8 @@
   .drip-input.text { width: 140px; text-align: left; }
   .drip-input:focus-visible { outline: 2px solid var(--accent); outline-offset: 0; }
   .drip-price { font-weight: 700; color: var(--money); }
+  .drip-note { font-size: 13px; color: var(--ink-soft); background: var(--money-soft); border-radius: 8px; padding: 8px 12px; }
+  .drip-note strong { color: var(--money); }
   .matrix tbody td { font-size: 11px; padding: 4px 10px; }
   .matrix tbody td .badge { font-size: 9.5px; padding: 2px 7px; }
 
@@ -4463,6 +4465,7 @@
   let dripLoaded = false;
   let unsubscribeDrip = null;
   let dripRoastCostMap = {};
+  let dripMarginDefaultV = 0; // 2 = 初期粗利率35%への切替済み
 
   const DRIP_LABELS = { beanProductId: "原料", grams: "DP容量", margin: "提案粗利率" };
 
@@ -4475,7 +4478,7 @@
       lots.forEach(([qty, fill]) => films(firstFilm, mattePrice).forEach(([film, filmPrice]) => {
         rows.push({ id: id++, qty, fill, film, filmPrice, printPrice: film === "白地フルカラー" ? 20 : 8, lossQty: 40, shipping: 1 });
       }));
-      return { id: id++, name, beanProductId: null, ...base, margin: 25, rows };
+      return { id: id++, name, beanProductId: null, ...base, margin: 35, rows };
     };
     const std = { freight: 120, boxCost: 12, grams: 10 };
     const cold = { freight: 120, boxCost: 12, grams: 18 };
@@ -4496,7 +4499,7 @@
     const rows = [[1000, 59.6, 26], [4000, 50.9, 26], [8000, 47, 26], [10000, 45.5, 17]].map(([qty, pack, fill], i) => ({
       id: 9101 + i, qty, fill, film: "白地フルカラー", filmPrice: pack, printPrice: 0, lossQty: 40, shipping: 1
     }));
-    dripTypes.push({ id: 9100, key: "sanyo", simple: true, name: "三洋産業 VFR（フルカラー）", beanProductId: null, freight: 120, boxCost: 12, grams: 10, margin: 25, rows });
+    dripTypes.push({ id: 9100, key: "sanyo", simple: true, name: "三洋産業 VFR（フルカラー）", beanProductId: null, freight: 120, boxCost: 12, grams: 10, margin: 35, rows });
     dripNextId = Math.max(dripNextId, 9200);
   }
 
@@ -4528,9 +4531,9 @@
     const price = m < 1 && isFinite(total) ? Math.round(total / (1 - m)) : NaN;
     return { base, lossUnit, total, price, profit: price - total };
   }
-  // PSIの形態ごとに選べるDP容量(g)。水出しは15〜20g、X型・VFR型・Dip Styleは10〜12g。三洋産業は制限なし
+  // 形態ごとに選べるDP容量(g)。水出しは15〜20g、X型・VFR型・Dip Style・三洋産業は10〜12g
   function dripGramRange(t) {
-    if (t.key === "sanyo") return null;
+    if (t.key === "sanyo") return [10, 12];
     return /水出し/.test(t.name) ? [15, 20] : [10, 12];
   }
 
@@ -4546,12 +4549,17 @@
       dripTypes = d.types;
       const maxId = Math.max(0, ...dripTypes.map(t => t.id), ...dripTypes.flatMap(t => (t.rows || []).map(r => r.id)));
       dripNextId = Math.max(d.nextId || 1, maxId + 1);
+      dripMarginDefaultV = d.marginDefaultV || 0;
     } else {
       const s = dripSeed();
       dripTypes = s.types;
       dripNextId = s.nextId;
     }
     dripEnsureSanyo();
+    if (dripMarginDefaultV < 2) { // 初期粗利率を35%に変更(2026-11-25)。既存の形態も一度だけ35%にそろえる
+      dripTypes.forEach(t => { t.margin = 35; });
+      dripMarginDefaultV = 2;
+    }
     dripTypes.forEach(t => {
       if (!Array.isArray(t.rows)) t.rows = [];
       if (t.beanProductId === undefined) t.beanProductId = null;
@@ -4569,7 +4577,7 @@
 
   // 変更を保存する。action を渡すと変更履歴にも記録する
   function saveDrip(action) {
-    const state = { types: dripTypes, nextId: dripNextId };
+    const state = { types: dripTypes, nextId: dripNextId, marginDefaultV: dripMarginDefaultV };
     try { localStorage.setItem(DRIP_STORAGE_KEY, JSON.stringify(state)); } catch (e) { /* ignore */ }
     renderDrip();
     if (suppressSave) return;
@@ -4649,6 +4657,9 @@
         </div>
       </div>
       <p class="hint" style="margin:0;">${beanNote}</p>
+      <div class="drip-note">試し刷り：${scope === "sanyo"
+        ? "<strong>¥6,000</strong>（印刷したフィルムを1枚作成し、その裏側に無地のアルミフィルムを重ねた状態でお届け）"
+        : "<strong>¥3,000</strong>"}</div>
       <div class="drip-readout">
         <span>焙煎豆原料価格 <strong>${isFinite(bp) ? `¥${fmt(bp)}` : "—"}</strong>/kg</span>
         <span>原料運賃 <strong>¥${fmt(dripNum(t.freight))}</strong>/kg</span>
